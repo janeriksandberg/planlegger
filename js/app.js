@@ -7,6 +7,7 @@
 
   let view = 'today';
   let selectedDate = S.ymd();
+  let planDate = S.ymd(); // dagen som vises under «Dagens plan» på I dag (sveip for å bla)
   let listFilter = 'open';
   let listCat = 'all';
   let focus = null;
@@ -264,6 +265,7 @@
   function renderToday() {
     const today = S.ymd();
     const entries = dayEntries(today);
+    const planEntries = planDate === today ? entries : dayEntries(planDate);
     const openTasks = openTasksFor(today);
     const doneToday = S.state.tasks.filter((t) => t.done && t.doneAt && S.ymd(new Date(t.doneAt)) === today);
     const nm = nowMin();
@@ -315,9 +317,17 @@
         ${dayE ? '<span class="tiny muted">Forslagene tilpasses</span>' : ''}
       </div>
       ${onboardingHtml()}
-      <div class="section-title"><h2>Dagens plan</h2><button class="btn sm ghost" data-act="nav" data-view="plan">Uke →</button></div>
-      <div class="card">
-        ${entries.length ? dayBarHtml(entries, today) + timelineHtml(entries, today) : `<div class="empty"><div class="big">🌤️</div>Ingen aktiviteter i dag ennå.<div class="mt"><button class="btn sm outline" data-act="newEvent">+ Legg til aktivitet</button></div></div>`}
+      <div class="section-title"><h2>${planDate === today ? 'Dagens plan' : d2(planDate)}</h2>
+        <div class="row" style="gap:4px">
+          ${planDate !== today ? `<button class="btn sm ghost" data-act="planDay" data-n="0">I dag</button>` : ''}
+          <button class="btn sm ghost icon" data-act="planDay" data-n="-1" aria-label="Forrige dag">‹</button>
+          <button class="btn sm ghost icon" data-act="planDay" data-n="1" aria-label="Neste dag">›</button>
+          <button class="btn sm ghost" data-act="nav" data-view="plan">Uke →</button>
+        </div>
+      </div>
+      <div class="card" data-swipe="planDay">
+        ${planEntries.length ? dayBarHtml(planEntries, planDate) + timelineHtml(planEntries, planDate) : `<div class="empty"><div class="big">${planDate === today ? '🌤️' : '📭'}</div>Ingen aktiviteter ${planDate === today ? 'i dag ennå' : d2(planDate).toLowerCase()}.<div class="mt"><button class="btn sm outline" data-act="newEvent">+ Legg til aktivitet</button></div></div>`}
+        <div class="swipe-hint tiny muted center">‹ sveip for å bla mellom dager ›</div>
       </div>
       <div class="section-title"><h2>Oppgaver i dag${starred ? ` · ${starred} viktigst` : ''}</h2><div class="row"><button class="btn sm ghost" data-act="pickTasks">Hent fra lister</button>${openTasks.length > 1 ? `<button class="btn sm ghost" data-act="aiPlanDay">✨ Planlegg</button>` : ''}</div></div>
       <div class="card">
@@ -326,7 +336,7 @@
             <input class="input grow" name="title" placeholder="Legg til en oppgave for i dag…" autocomplete="off">
             <button class="btn primary icon" type="submit" aria-label="Legg til">${ICONS.plus}</button>
           </div>
-          <div class="row" style="margin-top:8px"><span class="tiny muted">Kategori</span><select class="input sm" name="cat">${catOptions(S.cats()[0].id)}</select></div>
+          <label class="field" style="margin:8px 0 0"><span>Kategori</span><select class="input" name="cat">${catOptions(S.cats()[0].id)}</select></label>
         </form>
         ${openTasks.length > 5 ? `<p class="tiny muted">${openTasks.length} oppgaver i dag er mye. Marker 1–3 som viktigst, og utsett resten uten dårlig samvittighet (⋯-menyen).</p>` : ''}
         ${openTasks.length ? openTasks.map((t) => taskItemHtml(t, 'today')).join('') : `<div class="empty small">Ingen løse oppgaver. ${todayCount ? 'Bra jobba!' : 'Legg til én liten ting.'}</div>`}
@@ -398,13 +408,14 @@
     const total = entries.reduce((a, e) => a + e.duration, 0);
     return `
       <div class="page-head"><h1>Plan</h1><div class="row"><button class="btn sm outline" data-act="week" data-n="-1" aria-label="Forrige uke">‹</button><button class="btn sm outline" data-act="goToday">I dag</button><button class="btn sm outline" data-act="week" data-n="1" aria-label="Neste uke">›</button></div></div>
-      <div class="week-strip mb">${days.map((d) => {
+      <div class="week-strip mb" data-swipe="selDate">${days.map((d) => {
         const cats = [...new Set(dayEntries(d).map((e) => S.catById(e.cat).color))].slice(0, 4);
         return `<button class="${d === selectedDate ? 'sel' : ''} ${d === today ? 'today' : ''}" data-act="selDate" data-date="${d}"><span class="d">${DAY_NAMES[S.isoDow(d)]}</span><span class="n">${S.parseYmd(d).getDate()}</span><span class="dots">${cats.map((c) => `<i style="background:${c}"></i>`).join('')}</span></button>`;
       }).join('')}</div>
       <div class="section-title"><h2>${d2(selectedDate)}</h2><span class="small muted">${entries.length ? fmtDur(total) + ' planlagt' : ''}</span></div>
-      <div class="card">
+      <div class="card" data-swipe="selDate">
         ${entries.length ? dayBarHtml(entries, selectedDate) + timelineHtml(entries, selectedDate) : `<div class="empty"><div class="big">📭</div>Ingenting planlagt.<div class="mt"><button class="btn sm outline" data-act="newEvent">+ Legg til aktivitet</button></div></div>`}
+        <div class="swipe-hint tiny muted center">‹ sveip for å bla mellom dager ›</div>
       </div>
       ${dueTasks.length ? `<div class="section-title"><h2>Oppgaver med frist</h2></div><div class="card">${dueTasks.map((t) => taskItemHtml(t)).join('')}</div>` : ''}
       <div class="section-title"><h2>Maler</h2><button class="btn sm ghost" data-act="editTpl">+ Ny mal</button></div>
@@ -800,7 +811,8 @@
 
   // ---------- Handlinger ----------
   const actions = {
-    nav: (d) => { view = d.view; render(); window.scrollTo(0, 0); },
+    nav: (d) => { view = d.view; if (d.view === 'today') planDate = S.ymd(); render(); window.scrollTo(0, 0); },
+    planDay: (d) => { planDate = +d.n === 0 ? S.ymd() : S.addDays(planDate, +d.n); render(); },
     fab: () => { if (view === 'plan') openModal(eventModal(null, selectedDate)); else openModal(taskModal(null)); },
     closeModalBg: (d, el, e) => { if (e.target === el) closeModal(); },
     closeModal: () => closeModal(),
@@ -908,7 +920,7 @@
     inboxToTask: (d) => { const n = S.state.inbox.find((x) => x.id === d.id); if (n) openModal(taskModal(null, { title: n.text, inboxId: n.id })); },
 
     // Aktiviteter
-    newEvent: () => openModal(eventModal(null, view === 'plan' ? selectedDate : S.ymd())),
+    newEvent: () => openModal(eventModal(null, view === 'plan' ? selectedDate : planDate)),
     newEventTpl: (d) => { const t = S.templates().find((x) => x.id === d.id); if (t) openModal(eventModal(null, selectedDate, t)); },
     applyTemplate: (d, el) => {
       const t = S.templates().find((x) => x.id === d.id); if (!t) return; const f = el.closest('.modal').querySelector('form');
@@ -1172,6 +1184,23 @@
     }
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if ($('#modal').innerHTML) closeModal(); } });
+
+  // Sveip sidelengs på elementer med data-swipe for å bla mellom dager.
+  let swipe = null;
+  document.addEventListener('touchstart', (e) => {
+    const el = e.target.closest('[data-swipe]'); if (!el || e.touches.length !== 1) { swipe = null; return; }
+    swipe = { kind: el.dataset.swipe, x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!swipe) return;
+    const dx = e.changedTouches[0].clientX - swipe.x, dy = e.changedTouches[0].clientY - swipe.y;
+    const { kind, t } = swipe; swipe = null;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - t > 800) return;
+    const n = dx < 0 ? 1 : -1; // sveip mot venstre = neste dag
+    if (kind === 'planDay') actions.planDay({ n: String(n) });
+    else if (kind === 'selDate') { selectedDate = S.addDays(selectedDate, n); render(); }
+    vibrate(10);
+  }, { passive: true });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.state) { checkReminders(); if (view === 'today' && !$('#modal').innerHTML) render(); } });
 
   boot();
