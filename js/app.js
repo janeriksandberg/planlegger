@@ -76,7 +76,7 @@
       </div></div>`;
   }
 
-  const APP_VERSION = '11';
+  const APP_VERSION = '12';
 
   // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
   function setupServiceWorker() {
@@ -137,7 +137,7 @@
     return `<div class="statline">
       <span title="Poeng og nivå">⭐ <b>${g.points}</b> nivå ${lv.level}</span>
       <span title="Dager på rad">🔥 <b>${g.streak}</b> ${g.streak === 1 ? 'dag' : 'dager'} på rad</span>
-      <span title="Fullført i dag">🎯 <b>${Math.min(today, goal)}/${goal}</b> i dag</span>
+      <span title="Fullført i dag">🎯 <b>${Math.min(today, goal)}/${goal}</b> i dag${today > goal ? ` <b style="color:var(--success)">+${today - goal} bonus</b>` : ''}</span>
     </div>`;
   }
   function dueLabel(due) {
