@@ -206,6 +206,9 @@ label.field > span { display: block; font-size: .78rem; font-weight: 600; color:
 .item .title { font-weight: 550; }
 .item.done .title { text-decoration: line-through; color: var(--muted); }
 .item .meta { font-size: .84rem; color: var(--muted); }
+.item.task { position: relative; padding-left: 14px; }
+.item.task::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 2px; background: var(--c, var(--border)); }
+.item.task.done::before { opacity: .35; }
 .item.compact { padding: 5px 0; }
 .item.compact .title { font-size: .9rem; font-weight: 500; }
 .item.compact .check { width: 22px; height: 22px; font-size: .75rem; }

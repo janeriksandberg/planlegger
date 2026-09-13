@@ -148,7 +148,7 @@ window.PLStore = (() => {
       inbox: [],
       energyLog: {},
       game: { points: 0, streak: 0, bestStreak: 0, lastActive: null, freezes: 1, history: {}, badges: [] },
-      settings: { theme: 'auto', notify: true, calm: false, onboarded: false, dayStart: '06:00', dayEnd: '23:00', dailyGoal: 3, ai: { ...window.PLANLEGGER_CONFIG.ai } }
+      settings: { theme: 'auto', notify: true, calm: false, onboarded: false, lastCat: '', dayStart: '06:00', dayEnd: '23:00', dailyGoal: 3, ai: { ...window.PLANLEGGER_CONFIG.ai } }
     };
   }
 
@@ -183,14 +183,22 @@ window.PLStore = (() => {
     state.templates.forEach((t) => { if (t.cat === id) t.cat = fallback; });
     state.categories = state.categories.filter((c) => c.id !== id); save(); return true;
   }
-  function findExample(title) {
+  // Finner et forslag som matcher tittelen. Foretrukket kategori søkes først, deretter de andre.
+  // Returnerer { title, steps, cat } eller null.
+  function findExample(title, preferCat) {
     const q = String(title || '').trim().toLowerCase();
     if (!q) return null;
-    for (const c of state.categories) {
-      const hit = c.examples.find((e) => e.title.toLowerCase() === q) || c.examples.find((e) => q.includes(e.title.toLowerCase()) || e.title.toLowerCase().includes(q));
-      if (hit && hit.steps.length) return hit;
-    }
-    return null;
+    const ordered = [...state.categories].sort((a, b) => (b.id === preferCat) - (a.id === preferCat));
+    const match = (exact) => {
+      for (const c of ordered) {
+        const hit = exact
+          ? c.examples.find((e) => e.title.toLowerCase() === q)
+          : c.examples.find((e) => q.includes(e.title.toLowerCase()) || e.title.toLowerCase().includes(q));
+        if (hit && hit.steps.length) return { ...hit, cat: c.id };
+      }
+      return null;
+    };
+    return match(true) || match(false);
   }
   function addTemplate(data) { const t = { id: uid(), title: '', cat: state.categories[0].id, time: '09:00', duration: 30, recur: 'none', days: [], steps: [], ...data }; state.templates.push(t); save(); return t; }
   function updateTemplate(id, patch) { const t = state.templates.find((x) => x.id === id); if (t) Object.assign(t, patch); save(); return t; }

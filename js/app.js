@@ -76,7 +76,7 @@
       </div></div>`;
   }
 
-  const APP_VERSION = '8';
+  const APP_VERSION = '9';
 
   // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
   function setupServiceWorker() {
@@ -167,20 +167,20 @@
   }
   const dateChips = (withNone) => [['I dag', S.ymd()], ['I morgen', S.addDays(S.ymd(), 1)], ['Om en uke', S.addDays(S.ymd(), 7)], ...(withNone ? [['Ingen', '']] : [])];
 
-  // ctx: 'today' | 'list' | 'group' (inne i kategorigruppe – kategorinavn utelates)
+  // ctx: 'today' | 'list' | 'group' (inne i kategorigruppe). Kategori vises med fargestripe og emoji, ikke tekst.
   function taskItemHtml(t, ctx = 'list') {
     const c = S.catById(t.cat);
     const sd = t.steps.filter((s) => s.done).length;
-    const meta = ctx === 'group' ? [] : [c.emoji + ' ' + c.name];
+    const meta = [];
     if (t.due) meta.push(dueLabel(t.due));
     if (t.steps.length) meta.push(`${sd}/${t.steps.length} steg`);
     if (t.energy && t.energy !== 'medium') meta.push(energyLabel[t.energy]);
     if (t.trigger) meta.push('⛓ etter ' + esc(t.trigger));
     if (t.done && t.actualMin) meta.push(`brukte ${t.actualMin} min`);
-    return `<div class="item ${t.done ? 'done' : ''}">
+    return `<div class="item task ${t.done ? 'done' : ''}" style="--c:${c.color}">
       <button class="check ${t.done ? 'on' : ''}" data-act="toggleTask" data-id="${t.id}" aria-label="Fullfør">${t.done ? '✓' : ''}</button>
-      <div class="grow" data-act="openTask" data-id="${t.id}" style="cursor:pointer">
-        <div class="title">${t.prio === 1 && !t.done ? '<span class="star">★</span> ' : ''}${esc(t.title)}</div>
+      <div class="grow" data-act="openTask" data-id="${t.id}" style="cursor:pointer" title="${esc(c.name)}">
+        <div class="title">${t.prio === 1 && !t.done ? '<span class="star">★</span> ' : ''}${ctx === 'group' ? '' : c.emoji + ' '}${esc(t.title)}</div>
         ${meta.length ? `<div class="meta">${meta.join(' · ')}</div>` : ''}
       </div>
       ${!t.done ? `<div class="item-actions">
@@ -347,17 +347,35 @@
       </div>
       <div class="section-title"><h2>Oppgaver i dag${starred ? ` · ${starred} viktigst` : ''}</h2><div class="row"><button class="btn sm ghost" data-act="pickTasks">Hent fra lister</button>${openTasks.length > 1 ? `<button class="btn sm ghost" data-act="aiPlanDay">✨ Planlegg</button>` : ''}</div></div>
       <div class="card">
-        <form data-form="quickAdd" class="quick mb">
-          <div class="row">
-            <input class="input grow" name="title" placeholder="Legg til en oppgave for i dag…" autocomplete="off">
-            <button class="btn primary icon" type="submit" aria-label="Legg til">${ICONS.plus}</button>
-          </div>
-          <label class="field" style="margin:8px 0 0"><span>Kategori</span><select class="input" name="cat">${catOptions(S.cats()[0].id)}</select></label>
-        </form>
+        ${quickAddHtml()}
         ${openTasks.length > 5 ? `<p class="tiny muted">${openTasks.length} oppgaver i dag er mye. Marker 1–3 som viktigst, og utsett resten uten dårlig samvittighet (⋯-menyen).</p>` : ''}
         ${openTasks.length ? openTasks.map((t) => taskItemHtml(t, 'today')).join('') : `<div class="empty small">Ingen løse oppgaver. ${todayCount ? 'Bra jobba!' : 'Legg til én liten ting.'}</div>`}
       </div>
       ${doneToday.length ? `<details class="card"><summary>Fullført i dag (${doneToday.length}) 🎉</summary>${doneToday.map((t) => taskItemHtml(t)).join('')}</details>` : ''}`;
+  }
+
+  // Hurtiglegg-til: velg kategori → trykk på et forslag (legges rett inn med steg), eller skriv fritt.
+  function quickCatId() {
+    const cats = S.cats(); const last = S.state.settings.lastCat;
+    return cats.some((c) => c.id === last) ? last : cats[0].id;
+  }
+  function quickAddHtml() {
+    const catId = quickCatId(); const c = S.catById(catId);
+    const today = S.ymd();
+    const existing = new Set(S.state.tasks.filter((t) => !t.done && t.today === today).map((t) => t.title.toLowerCase()));
+    return `<form data-form="quickAdd" class="quick mb">
+      <div class="row">
+        <input class="input grow" name="title" placeholder="Skriv en oppgave, eller velg et forslag under…" autocomplete="off">
+        <button class="btn primary icon" type="submit" aria-label="Legg til">${ICONS.plus}</button>
+      </div>
+      <input type="hidden" name="cat" value="${catId}">
+      <div class="chips scroll" style="margin-top:8px">${S.cats().map((x) => `<button type="button" class="chip ${x.id === catId ? 'active' : ''}" data-act="quickCat" data-v="${x.id}" style="${x.id === catId ? `border-color:${x.color};color:${x.color};background:${x.color}1a` : ''}">${x.emoji} ${esc(x.name)}</button>`).join('')}</div>
+      <div class="chips" style="margin-top:2px">${c.examples.length
+        ? c.examples.map((x, i) => existing.has(x.title.toLowerCase())
+          ? `<span class="chip small" style="opacity:.45" title="Ligger allerede i dag">✓ ${esc(x.title)}</span>`
+          : `<button type="button" class="chip small" data-act="quickExample" data-cat="${c.id}" data-i="${i}">+ ${esc(x.title)}${x.steps.length ? ` <span class="muted">·${x.steps.length}</span>` : ''}</button>`).join('')
+        : `<span class="tiny muted">Ingen forslag i ${esc(c.name)} ennå. Legg til under Mer → Kategorier.</span>`}</div>
+    </form>`;
   }
 
   // Tre små steg første gang. Hukes av automatisk, forsvinner når alle er gjort eller når brukeren skjuler det.
@@ -853,6 +871,18 @@
     pickColor: (d, el) => { el.closest('form').color.value = d.v; $$('.swatches button', el.closest('form')).forEach((b) => b.classList.toggle('on', b === el)); },
 
     // I dag
+    quickCat: (d, el) => {
+      S.state.settings.lastCat = d.v; S.save();
+      const typed = el.closest('form').title.value;
+      render();
+      const inp = $('form[data-form="quickAdd"] input[name="title"]'); if (inp && typed) inp.value = typed;
+    },
+    quickExample: (d) => {
+      const c = S.catById(d.cat); const x = c.examples[+d.i]; if (!x) return;
+      const t = S.addTask({ title: x.title, cat: c.id, today: S.ymd(), steps: x.steps.map((title) => ({ id: S.uid(), title, done: false })) });
+      S.state.settings.lastCat = c.id; S.save(); render();
+      undoToast(`Lagt til: ${x.title}${x.steps.length ? ` (${x.steps.length} steg)` : ''}`, () => S.deleteTask(t.id));
+    },
     setEnergy: (d) => { const today = S.ymd(); S.setEnergy(today, S.energyOn(today) === d.v ? '' : d.v); render(); },
     toggleStar: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return; S.updateTask(d.id, { prio: t.prio === 1 ? 2 : 1 }); closeModal(); render(); toast(t.prio === 1 ? '★ Markert som viktigst' : 'Fjernet fra viktigst'); },
     postpone: (d) => {
@@ -1102,9 +1132,12 @@
     },
     quickAdd: (f) => {
       const d = readForm(f); if (!d.title.trim()) return;
-      const x = S.findExample(d.title);
-      S.addTask({ title: d.title.trim(), cat: d.cat, today: S.ymd(), steps: x ? x.steps.map((title) => ({ id: S.uid(), title, done: false })) : [] });
-      render(); toast(x ? `Lagt til med ${x.steps.length} steg ✔` : 'Lagt til ✔');
+      const x = S.findExample(d.title, d.cat);
+      const cat = x ? x.cat : d.cat;
+      S.addTask({ title: d.title.trim(), cat, today: S.ymd(), steps: x ? x.steps.map((title) => ({ id: S.uid(), title, done: false })) : [] });
+      S.state.settings.lastCat = cat; S.save(); render();
+      const cname = S.catById(cat).name;
+      toast(x ? `Lagt til under ${cname} med ${x.steps.length} steg ✔` : `Lagt til under ${cname} ✔`);
       const inp = $('form[data-form="quickAdd"] input'); if (inp) inp.focus();
     },
     inboxAdd: (f) => {
