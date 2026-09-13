@@ -178,6 +178,8 @@ textarea.input { min-height: 80px; resize: vertical; }
 label.field { display: block; margin-bottom: 12px; }
 label.field > span { display: block; font-size: .78rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.timepick .chips { padding-top: 6px; }
+.timepick .chips.scroll .chip { min-width: 46px; justify-content: center; font-variant-numeric: tabular-nums; }
 .dt { display: flex; gap: 6px; }
 .dt .input { flex: 1; min-width: 0; }
 .dt input[type="date"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

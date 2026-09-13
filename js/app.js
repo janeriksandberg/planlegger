@@ -76,7 +76,7 @@
       </div></div>`;
   }
 
-  const APP_VERSION = '13';
+  const APP_VERSION = '14';
 
   // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
   function setupServiceWorker() {
@@ -185,10 +185,24 @@
     </div>
     ${chips ? `<div class="chips">${chips.map(([l, v]) => `<button type="button" class="chip small" data-act="setDate" data-for="${name}" data-v="${v}">${l}</button>`).join('')}</div>` : ''}`;
   }
-  function timeField(name, hm, steppers) {
-    const inp = `<input class="input" name="${name}" value="${esc(hm || '')}" placeholder="tt:mm" inputmode="numeric" autocomplete="off">`;
-    if (!steppers) return inp;
-    return `<div class="dt"><button type="button" class="btn icon outline" data-act="timeStep" data-for="${name}" data-n="-15" aria-label="15 min tidligere">−</button>${inp}<button type="button" class="btn icon outline" data-act="timeStep" data-for="${name}" data-n="15" aria-label="15 min senere">+</button></div>`;
+  // Tidsvelger: tekstfelt (tt:mm) + rad med timer og kvarter. To trykk gir et klokkeslett.
+  function timeField(name, hm, picker) {
+    const inp = `<input class="input" name="${name}" value="${esc(hm || '')}" placeholder="tt:mm" inputmode="numeric" autocomplete="off" data-input="time">`;
+    if (!picker) return inp;
+    const t = S.parseTime(hm || '') || '';
+    const [hh, mm] = t ? t.split(':') : ['', ''];
+    const hours = [...Array(18)].map((_, i) => String(i + 6).padStart(2, '0'));
+    return `<div class="timepick">${inp}
+      <div class="chips scroll">${hours.map((h) => `<button type="button" class="chip small ${h === hh ? 'active' : ''}" data-act="pickHour" data-v="${h}">${h}</button>`).join('')}</div>
+      <div class="chips">${['00', '15', '30', '45'].map((m) => `<button type="button" class="chip small ${m === mm ? 'active' : ''}" data-act="pickMin" data-v="${m}">:${m}</button>`).join('')}<button type="button" class="chip small" data-act="pickNow">Nå</button><button type="button" class="chip small" data-act="pickClear">Tøm</button></div>
+    </div>`;
+  }
+  function syncTimePick(box) {
+    const t = S.parseTime(box.querySelector('input').value) || '';
+    const [hh, mm] = t ? t.split(':') : ['', ''];
+    $$('[data-act="pickHour"]', box).forEach((b) => b.classList.toggle('active', b.dataset.v === hh));
+    $$('[data-act="pickMin"]', box).forEach((b) => b.classList.toggle('active', b.dataset.v === mm));
+    revealActiveChips();
   }
   const dateChips = (withNone) => [['I dag', S.ymd()], ['I morgen', S.addDays(S.ymd(), 1)], ['Om en uke', S.addDays(S.ymd(), 7)], ...(withNone ? [['Ingen', '']] : [])];
 
@@ -618,7 +632,7 @@
   }
   // Ruller valgt kategori inn i synsfeltet i rullbare chip-rader.
   function revealActiveChips() {
-    $$('.cat-chips').forEach((row) => { const a = row.querySelector('.chip.active'); if (a) row.scrollLeft = a.offsetLeft - row.clientWidth / 2 + a.offsetWidth / 2; });
+    $$('.chips.scroll').forEach((row) => { const a = row.querySelector('.chip.active'); if (a) row.scrollLeft = a.offsetLeft - row.clientWidth / 2 + a.offsetWidth / 2; });
   }
   function closeModal() { $('#modal').innerHTML = ''; }
   const modalHead = (title, extra = '') => `<div class="row between mb"><h2>${title}</h2><div class="row">${extra}<button class="btn sm ghost" data-act="closeModal" aria-label="Lukk">✕</button></div></div>`;
@@ -651,7 +665,7 @@
             <label class="field"><span>Klokkeslett (valgfritt)</span>${timeField('plannedTime', task.plannedTime || '', true)}</label>
             <label class="field"><span>Varighet (min)</span><input class="input" type="number" name="plannedDuration" min="5" max="480" value="${task.plannedDuration || 25}"></label>
           </div>
-          <p class="tiny muted" style="margin-top:-6px">Med klokkeslett vises oppgaven i kalenderen på datoen over, eller i dag hvis ingen dato er satt.</p>
+          <p class="tiny muted" style="margin-top:-6px">Oppgaven vises i kalenderen når den har både dato og klokkeslett.</p>
           ${isNew ? `<label class="field"><span>Steg (ett per linje, valgfritt)</span><textarea class="input" name="stepsText" placeholder="Finne fram…&#10;Gjøre første del…">${esc((task.steps || []).map((s) => s.title || s).join('\n'))}</textarea></label>` : ''}
           <label class="field"><span>Notat</span><textarea class="input" name="notes" style="min-height:56px">${esc(task.notes || '')}</textarea></label>
         </details>
@@ -914,10 +928,16 @@
       try { nat.showPicker(); } catch (e) { nat.click(); }
     },
     setDate: (d, el) => { el.closest('form')[d.for].value = S.fmtNb(d.v); },
-    timeStep: (d, el) => {
-      const inp = el.closest('form')[d.for]; const t = S.parseTime(inp.value) || '09:00';
-      inp.value = S.minToHm((S.minutesOf(t) + +d.n + 1440) % 1440);
+    pickHour: (d, el) => {
+      const box = el.closest('.timepick'); const inp = box.querySelector('input'); const t = S.parseTime(inp.value);
+      inp.value = `${d.v}:${t ? t.split(':')[1] : '00'}`; syncTimePick(box); modalDirty = true;
     },
+    pickMin: (d, el) => {
+      const box = el.closest('.timepick'); const inp = box.querySelector('input'); const t = S.parseTime(inp.value);
+      inp.value = `${t ? t.split(':')[0] : String(new Date().getHours()).padStart(2, '0')}:${d.v}`; syncTimePick(box); modalDirty = true;
+    },
+    pickNow: (d, el) => { const box = el.closest('.timepick'); box.querySelector('input').value = nextQuarter(); syncTimePick(box); modalDirty = true; },
+    pickClear: (d, el) => { const box = el.closest('.timepick'); box.querySelector('input').value = ''; syncTimePick(box); },
     setDur: (d, el) => { el.closest('form').duration.value = d.v; },
     toggleDay: (d, el) => el.classList.toggle('on'),
     pickColor: (d, el) => { el.closest('form').color.value = d.v; $$('.swatches button', el.closest('form')).forEach((b) => b.classList.toggle('on', b === el)); },
@@ -1219,8 +1239,6 @@
       const plannedTime = (d.plannedTime || '').trim() ? readTime(d.plannedTime, 'klokkeslett') : '';
       if (plannedTime === null) return;
       const patch = { title: d.title.trim(), cat: d.cat, due, energy: d.energy, notes: d.notes, trigger: (d.trigger || '').trim(), prio: d.star ? 1 : 2, today: d.today ? today : '', plannedTime, plannedDuration: plannedTime ? Math.max(5, +d.plannedDuration || 25) : 0 };
-      // Klokkeslett uten dato: legg oppgaven i dagens plan, ellers vises den ikke i kalenderen.
-      if (plannedTime && !due && !patch.today) patch.today = today;
       if (f.dataset.id) {
         S.updateTask(f.dataset.id, patch);
       } else {
@@ -1315,6 +1333,7 @@
   document.addEventListener('input', (e) => {
     if (e.target.closest('#modal form')) modalDirty = true;
     if (e.target.matches('[data-input="quickTitle"]')) { const tag = $('#quickTag'); if (tag) tag.innerHTML = quickTagText(e.target.value); }
+    if (e.target.matches('.timepick input')) syncTimePick(e.target.closest('.timepick'));
   });
 
   // Sveip sidelengs på elementer med data-swipe for å bla mellom dager.
