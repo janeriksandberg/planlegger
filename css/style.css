@@ -246,6 +246,10 @@ label.field > span { display: block; font-size: .78rem; font-weight: 600; color:
 .daybar-labels { display: flex; justify-content: space-between; font-size: .78rem; color: var(--muted); margin-bottom: 8px; }
 .daybar-labels .n { color: var(--danger); font-weight: 700; }
 
+.leftover { border-left: 4px solid var(--primary); }
+.leftover .item { flex-wrap: wrap; }
+.leftover .item .grow { min-width: 55%; }
+
 /* Onboarding */
 .onboard .step { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
 .onboard .step .num { width: 26px; height: 26px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }

@@ -353,6 +353,22 @@ window.PLStore = (() => {
   // eller «i dag» via Sett klokkeslett i dag). Reserve for eldre data: dagens plan, ellers fristen.
   const taskDate = (t) => t.plannedDate || t.today || t.due || '';
 
+  // Dagsskifte: oppgaver som var satt opp på en dag som er passert, mister dato og klokkeslett
+  // og merkes som «ikke gjort» slik at brukeren kan velge I dag / Senere / Ikke aktuelt. Ingen «forfalt».
+  function rollover() {
+    const today = ymd(); let changed = 0;
+    state.tasks.forEach((t) => {
+      if (t.done) return;
+      const past = [t.today, t.due, t.plannedDate].filter((d) => d && d < today).sort();
+      if (!past.length) return;
+      t.setFor = past[past.length - 1]; t.leftover = true;
+      t.today = ''; t.due = ''; t.plannedTime = ''; t.plannedDate = ''; t.plannedDuration = 0; changed++;
+    });
+    if (changed) save();
+    return changed;
+  }
+  const leftovers = () => state.tasks.filter((t) => !t.done && t.leftover);
+
   // --- Innboks (tankefanger) og energi ---
   function addInbox(text) { const n = { id: uid(), text: text.trim(), created: Date.now() }; state.inbox.unshift(n); save(); return n; }
   function deleteInbox(id) { state.inbox = state.inbox.filter((n) => n.id !== id); save(); }
@@ -488,7 +504,7 @@ window.PLStore = (() => {
     get state() { return state; },
     onChange: (fn) => listeners.add(fn),
     hasDeviceKey, hasData, unlockWithPassword, unlockWithDevice, lockDevice, wipe, rekey, changePassword, save, exportJson, exportIcs, importJson,
-    addInbox, deleteInbox, setEnergy, energyOn, taskDate,
+    addInbox, deleteInbox, setEnergy, energyOn, taskDate, rollover, leftovers,
     occursOn, occurrencesOn, recurLabel, levelOf, totalDone,
     addTask, updateTask, deleteTask, restoreTask, toggleTask, toggleStep,
     addEvent, updateEvent, deleteEvent, restoreEvent, skipOccurrence, unskipOccurrence, toggleOccurrence, toggleEventStep

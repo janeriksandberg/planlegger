@@ -76,7 +76,7 @@
       </div></div>`;
   }
 
-  const APP_VERSION = '17';
+  const APP_VERSION = '18';
 
   // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
   function setupServiceWorker() {
@@ -117,6 +117,7 @@
 
   function render() {
     if (!S.state) return;
+    S.rollover();
     $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
     $('.fab').hidden = view === 'more';
     $('#main').innerHTML = { today: renderToday, lists: renderLists, plan: renderPlan, more: renderMore }[view]();
@@ -144,7 +145,7 @@
     const t = S.ymd();
     if (due === t) return 'i dag';
     if (due === S.addDays(t, 1)) return 'i morgen';
-    if (due < t) return `<span style="color:var(--danger)">forfalt ${shortDate(due)}</span>`;
+    if (due < t) return `satt opp ${shortDate(due)}`;
     return shortDate(due);
   }
   function catOptions(sel) { return S.cats().map((c) => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.emoji} ${esc(c.name)}</option>`).join(''); }
@@ -236,6 +237,7 @@
     const sd = t.steps.filter((s) => s.done).length;
     const meta = [];
     if (t.due) meta.push(dueLabel(t.due));
+    else if (t.setFor && !t.done && !t.today) meta.push(`satt opp ${shortDate(t.setFor)}`);
     if (t.plannedTime && !t.done) meta.push(`kl. ${t.plannedTime}`);
     if (t.steps.length) meta.push(`${sd}/${t.steps.length} steg`);
     if (t.energy && t.energy !== 'medium') meta.push(energyLabel[t.energy]);
@@ -336,17 +338,20 @@
   function openTasksFor(date) {
     const dayE = S.energyOn(date);
     const match = (t) => (dayE ? Math.abs(eRank[t.energy] - eRank[dayE]) : 0);
+    // Oppgaver som hører til dagen uten klokkeslett. Passerte datoer håndteres av dagsskiftet, ikke her.
     return S.state.tasks
-      .filter((t) => !t.done && !(t.plannedTime && S.taskDate(t) === date) && (t.today === date || (t.due && t.due <= date)))
+      .filter((t) => !t.done && !t.leftover && !(t.plannedTime && S.taskDate(t) === date) && (t.today === date || t.due === date))
       .sort((a, b) => (b.prio === 1) - (a.prio === 1) || match(a) - match(b) || (a.due || '~').localeCompare(b.due || '~'));
   }
 
   // ---------- I dag ----------
   function renderToday() {
     const today = S.ymd();
+    const isToday = planDate === today;
     const entries = dayEntries(today);
-    const planEntries = planDate === today ? entries : dayEntries(planDate);
+    const planEntries = isToday ? entries : dayEntries(planDate);
     const openTasks = openTasksFor(today);
+    const listTasks = isToday ? openTasks : openTasksFor(planDate);
     const doneToday = S.state.tasks.filter((t) => t.done && t.doneAt && S.ymd(new Date(t.doneAt)) === today);
     const nm = nowMin();
     const current = entries.find((e) => !e.done && e.start <= nm && nm < e.end);
@@ -388,6 +393,7 @@
         ${[['low', 'Lav'], ['medium', 'Middels'], ['high', 'Høy']].map(([v, l]) => `<button class="chip small ${dayE === v ? 'active' : ''}" data-act="setEnergy" data-v="${v}">${l}</button>`).join('')}
         ${dayE ? '<span class="tiny muted">Forslagene tilpasses</span>' : ''}
       </div>
+      ${isToday ? leftoverHtml() : ''}
       ${onboardingHtml()}
       <div class="section-title"><h2>${planDate === today ? 'Dagens plan' : d2(planDate)}</h2>
         <div class="row" style="gap:4px">
@@ -401,13 +407,25 @@
         ${planEntries.length ? dayBarHtml(planEntries, planDate) + timelineHtml(planEntries, planDate) : `<div class="empty"><div class="big">${planDate === today ? '🌤️' : '📭'}</div>Ingen aktiviteter ${planDate === today ? 'i dag ennå' : d2(planDate).toLowerCase()}.<div class="mt"><button class="btn sm outline" data-act="newEvent">+ Legg til aktivitet</button></div></div>`}
         <div class="swipe-hint tiny muted center">‹ sveip for å bla mellom dager ›</div>
       </div>
-      <div class="section-title"><h2>Oppgaver i dag${starred ? ` · ${starred} viktigst` : ''}</h2><div class="row"><button class="btn sm ghost" data-act="pickTasks">Hent fra lister</button>${openTasks.length > 1 ? `<button class="btn sm ghost" data-act="aiPlanDay">✨ Planlegg</button>` : ''}</div></div>
+      <div class="section-title"><h2>${isToday ? 'Oppgaver i dag' : 'Oppgaver ' + d2(planDate).toLowerCase()}${isToday && starred ? ` · ${starred} viktigst` : ''}</h2>${isToday ? `<div class="row"><button class="btn sm ghost" data-act="pickTasks">Hent fra lister</button>${openTasks.length > 1 ? `<button class="btn sm ghost" data-act="aiPlanDay">✨ Planlegg</button>` : ''}</div>` : ''}</div>
       <div class="card">
-        ${quickAddHtml()}
-        ${openTasks.length > 5 ? `<p class="tiny muted">${openTasks.length} oppgaver i dag er mye. Marker 1–3 som viktigst, og utsett resten uten dårlig samvittighet (⋯-menyen).</p>` : ''}
-        ${openTasks.length ? openTasks.map((t) => taskItemHtml(t, 'today')).join('') : `<div class="empty small">Ingen løse oppgaver. ${todayCount ? 'Bra jobba!' : 'Legg til én liten ting.'}</div>`}
+        ${quickAddHtml(planDate)}
+        ${isToday && openTasks.length > 5 ? `<p class="tiny muted">${openTasks.length} oppgaver i dag er mye. Marker 1–3 som viktigst, og utsett resten uten dårlig samvittighet (⋯-menyen).</p>` : ''}
+        ${listTasks.length ? listTasks.map((t) => taskItemHtml(t, 'today')).join('') : `<div class="empty small">${isToday ? `Ingen løse oppgaver. ${todayCount ? 'Bra jobba!' : 'Legg til én liten ting.'}` : 'Ingen oppgaver satt opp denne dagen.'}</div>`}
       </div>
-      ${doneToday.length ? `<details class="card"><summary>Fullført i dag (${doneToday.length}) 🎉</summary>${doneToday.map((t) => taskItemHtml(t)).join('')}</details>` : ''}`;
+      ${isToday && doneToday.length ? `<details class="card"><summary>Fullført i dag (${doneToday.length}) 🎉</summary>${doneToday.map((t) => taskItemHtml(t)).join('')}</details>` : ''}`;
+  }
+
+  // Morgenens sortering: oppgaver fra passerte dager, ett valg per oppgave, uten skam.
+  function leftoverHtml() {
+    const list = S.leftovers();
+    if (!list.length) return '';
+    return `<div class="card leftover">
+      <div class="row between"><h2>${list.length} ${list.length === 1 ? 'oppgave' : 'oppgaver'} ble ikke gjort</h2><button class="btn sm ghost" data-act="leftoverDismiss">Skjul</button></div>
+      <p class="small muted">Helt greit. Velg hva som skjer med dem nå. Skjuler du kortet, blir de liggende i Lister.</p>
+      ${list.map((t) => `<div class="item"><div class="grow"><div class="title">${S.catById(t.cat).emoji} ${esc(t.title)}</div><div class="meta">satt opp ${shortDate(t.setFor)}</div></div>
+        <div class="row" style="gap:4px;flex-shrink:0"><button class="btn sm outline" data-act="leftoverToday" data-id="${t.id}">I dag</button><button class="btn sm ghost" data-act="leftoverLater" data-id="${t.id}">Senere</button><button class="btn sm ghost" data-act="leftoverDrop" data-id="${t.id}" title="Ikke lenger aktuelt" aria-label="Ikke lenger aktuelt">✕</button></div></div>`).join('')}
+    </div>`;
   }
 
   // Hurtiglegg-til: skriv fritt (merkelappen viser hvor det havner), eller trykk på en kategori for forslag.
@@ -418,14 +436,15 @@
     const c = S.catById(quickTextCat || (x ? x.cat : S.defaultCatId()));
     return `→ <b>${c.emoji} ${esc(c.name)}</b>${x && x.steps.length ? ` · ${x.steps.length} steg` : ''}`;
   }
-  function quickAddHtml() {
+  function quickAddHtml(date) {
     const open = quickOpenCat && S.cats().some((c) => c.id === quickOpenCat) ? quickOpenCat : null;
     const c = open ? S.catById(open) : null;
-    const today = S.ymd();
-    const existing = new Set(S.state.tasks.filter((t) => !t.done && t.today === today).map((t) => t.title.toLowerCase()));
+    const today = S.ymd(); const isToday = date === today;
+    const existing = new Set(S.state.tasks.filter((t) => !t.done && (isToday ? t.today === date : t.due === date)).map((t) => t.title.toLowerCase()));
     return `<form data-form="quickAdd" class="quick mb">
+      <input type="hidden" name="date" value="${date}">
       <div class="row">
-        <input class="input grow" name="title" placeholder="Ny oppgave for i dag…" autocomplete="off" autocapitalize="sentences" enterkeyhint="done" data-input="quickTitle">
+        <input class="input grow" name="title" placeholder="${isToday ? 'Ny oppgave for i dag…' : 'Ny oppgave ' + d2(date).toLowerCase() + '…'}" autocomplete="off" autocapitalize="sentences" enterkeyhint="done" data-input="quickTitle">
         <button class="btn primary icon" type="submit" aria-label="Legg til">${ICONS.plus}</button>
       </div>
       <button type="button" class="quick-tag" id="quickTag" data-act="quickTag" title="Velg hvor oppgaven skal havne">${quickTagText('')}</button>
@@ -433,7 +452,7 @@
       ${c ? `<div class="chips" style="margin-top:2px">${c.examples.length
         ? c.examples.map((x, i) => existing.has(x.title.toLowerCase())
           ? `<span class="chip small" style="opacity:.45" title="Ligger allerede i dag">✓ ${esc(x.title)}</span>`
-          : `<button type="button" class="chip small" data-act="quickExample" data-cat="${c.id}" data-i="${i}" title="${x.steps.length ? x.steps.length + ' steg' : ''}">${x.steps.length ? '☰ ' : ''}${esc(x.title)}</button>`).join('')
+          : `<button type="button" class="chip small" data-act="quickExample" data-cat="${c.id}" data-i="${i}" data-date="${date}" title="${x.steps.length ? x.steps.length + ' steg' : ''}">${x.steps.length ? '☰ ' : ''}${esc(x.title)}</button>`).join('')
         : `<span class="tiny muted">Ingen forslag i ${esc(c.name)} ennå. Legg til under Mer → Kategorier.</span>`}</div>` : ''}
     </form>`;
   }
@@ -967,6 +986,16 @@
     toggleDay: (d, el) => el.classList.toggle('on'),
     pickColor: (d, el) => { el.closest('form').color.value = d.v; $$('.swatches button', el.closest('form')).forEach((b) => b.classList.toggle('on', b === el)); },
 
+    // Ikke gjort i går
+    leftoverToday: (d) => { S.updateTask(d.id, { today: S.ymd(), leftover: false }); render(); toast('Lagt i dagens plan 📅'); },
+    leftoverLater: (d) => { S.updateTask(d.id, { leftover: false }); render(); toast('Ligger i Lister til du vil ha den'); },
+    leftoverDrop: (d) => {
+      const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return;
+      const idx = S.state.tasks.indexOf(t); S.deleteTask(d.id); render();
+      undoToast(`Fjernet «${t.title.slice(0, 30)}»`, () => S.restoreTask(t, idx));
+    },
+    leftoverDismiss: () => { S.leftovers().forEach((t) => { t.leftover = false; }); S.save(); render(); },
+
     // I dag
     quickCat: (d, el) => {
       quickOpenCat = quickOpenCat === d.v ? null : d.v;
@@ -976,7 +1005,8 @@
     },
     quickExample: (d) => {
       const c = S.catById(d.cat); const x = c.examples[+d.i]; if (!x) return;
-      const t = S.addTask({ title: x.title, cat: c.id, today: S.ymd(), steps: x.steps.map((title) => ({ id: S.uid(), title, done: false })) });
+      const when = !d.date || d.date === S.ymd() ? { today: S.ymd() } : { due: d.date };
+      const t = S.addTask({ title: x.title, cat: c.id, ...when, steps: x.steps.map((title) => ({ id: S.uid(), title, done: false })) });
       render();
       undoToast(`Lagt til: ${x.title}${x.steps.length ? ` (${x.steps.length} steg)` : ''}`, () => S.deleteTask(t.id));
     },
@@ -1250,10 +1280,11 @@
       // Manuelt valg vinner. Ellers: treff på et forslag gir forslagets kategori, og fritekst havner under «Annet».
       const x = S.findExample(d.title);
       const cat = quickTextCat || (x ? x.cat : S.defaultCatId());
-      const t = S.addTask({ title: d.title.trim(), cat, today: S.ymd(), steps: x ? x.steps.map((title) => ({ id: S.uid(), title, done: false })) : [] });
+      const when = d.date === S.ymd() ? { today: S.ymd() } : { due: d.date };
+      const t = S.addTask({ title: d.title.trim(), cat, ...when, steps: x ? x.steps.map((title) => ({ id: S.uid(), title, done: false })) : [] });
       quickTextCat = null; render();
       const cname = S.catById(cat).name;
-      undoToast(x ? `Lagt til under ${cname} med ${x.steps.length} steg` : `Lagt til under ${cname}`, () => S.deleteTask(t.id));
+      undoToast(x ? `Lagt til under ${cname} med ${x.steps.length} steg` : `Lagt til under ${cname}${d.date !== S.ymd() ? ' ' + d2(d.date).toLowerCase() : ''}`, () => S.deleteTask(t.id));
       const inp = $('form[data-form="quickAdd"] input'); if (inp) inp.focus();
     },
     inboxAdd: (f) => {
