@@ -78,19 +78,32 @@ Foreslå små, tydelige første steg (2–10 minutter). Vær oppmuntrende uten �
 
   // ---------- Innebygde forslag (uten AI) ----------
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  // Mest spesifikke mønstre først. Første treff vinner.
   const LOCAL_STEPS = [
-    { re: /ring|telefon/i, steps: (t) => ['Finn fram nummeret', 'Skriv ned 2 punkter du vil si', `Ring: ${t}`, 'Noter svaret eller avtalen'] },
+    { re: /klesvask|vaske klær|vask.*(klær|tøy)|tøyvask|skittentøy/i, steps: () => ['Samle skittentøy', 'Sortere lyst og mørkt', 'Legge i maskinen og fylle såpe', 'Velge program og starte', 'Sette alarm til vasken er ferdig'] },
+    { re: /henge opp|tørketrommel|tørke klær|brette/i, steps: () => ['Ta klærne ut av maskinen', 'Heng opp eller sett i trommelen', 'Sett alarm for å ta dem ned', 'Brett og legg i skapet'] },
+    { re: /oppvask/i, steps: () => ['Tømme oppvaskmaskinen', 'Skylle og sette inn', 'Vaske det som må tas for hånd', 'Tørke over benken'] },
+    { re: /søppel|pant/i, steps: () => ['Knyte igjen posen', 'Sette i ny pose', 'Gå ut med den'] },
+    { re: /sengetøy/i, steps: () => ['Ta av det gamle', 'Finne fram rent sengetøy', 'Legge på laken, dyne- og putetrekk', 'Legge det gamle i vasken'] },
+    { re: /medisin|tablett|resept|vitamin/i, steps: () => ['Finn fram medisinen', 'Ta den med et glass vann', 'Huk av her'] },
+    { re: /ring|telefon/i, steps: () => ['Finn fram nummeret', 'Skriv ned 2 punkter du vil si', 'Ring', 'Noter svaret eller avtalen'] },
     { re: /e-?post|mail|melding|svar/i, steps: () => ['Åpne innboksen', 'Velg den ene meldingen som haster mest', 'Skriv et kort svar (3 setninger holder)', 'Send, og lukk innboksen'] },
-    { re: /vask|rydd|støvsug|oppvask|søppel|kjøkken|bad/i, steps: () => ['Sett på musikk eller en podkast', 'Sett timer på 10 minutter', 'Start med én flate eller ett hjørne', 'Fortsett til timeren ringer', 'Se hva som er gjort, og feir litt'] },
+    { re: /middag|frokost|lunsj|matpakke|lage mat|koke|bake/i, steps: () => ['Bestem hva du skal lage', 'Finn fram ingredienser', 'Lag maten', 'Spis', 'Sett inn i oppvaskmaskinen'] },
     { re: /handle|butikk|kjøp/i, steps: () => ['Skriv en kort handleliste', 'Finn fram poser og betalingskort', 'Dra til butikken', 'Pakk ut når du kommer hjem'] },
-    { re: /trene|trening|gå en tur|tur|løpe/i, steps: () => ['Skift til treningstøy (bare det)', 'Fyll vannflaske', 'Gå ut døra', 'Gjør 10 minutter, resten er bonus'] },
-    { re: /les|pensum|studer|oppgave|skriv|rapport/i, steps: () => ['Finn fram det du trenger og lukk andre faner', 'Sett timer på 15 minutter', 'Skriv eller les den første lille delen', 'Noter hvor du slapp', 'Ta en kort pause'] },
-    { re: /regning|betal|nettbank|søknad|skjema|bestill|time/i, steps: () => ['Finn fram innlogging og det du trenger', 'Gjør bare første steg (åpne siden)', 'Fyll inn eller betal', 'Bekreft at det gikk gjennom'] }
+    { re: /rydd|støvsug|vask|tørk|kjøkken|bad|gulv|vindu/i, steps: () => ['Sett på musikk eller en podkast', 'Sett timer på 10 minutter', 'Start med det som er mest synlig', 'Fortsett til timeren ringer', 'Se hva som er gjort, og feir litt'] },
+    { re: /trene|trening|gå en tur|tur|løpe|jogge|sykle|svømme/i, steps: () => ['Skift til treningstøy (bare det)', 'Fyll vannflaske', 'Gå ut døra', 'Gjør 10 minutter, resten er bonus'] },
+    { re: /dusj|tannlege|pusse tenner|hår/i, steps: () => ['Finn fram det du trenger', 'Sett timer på 10 minutter', 'Gjør det', 'Huk av'] },
+    { re: /legge meg|sove|søvn/i, steps: () => ['Sett alarm 30 min før leggetid', 'Mobil til lading utenfor soverommet', 'Pusse tenner', 'Lys av'] },
+    { re: /les|pensum|studer|oppgave|skriv|rapport|notat/i, steps: () => ['Finn fram det du trenger og lukk andre faner', 'Sett timer på 15 minutter', 'Skriv eller les den første lille delen', 'Noter hvor du slapp', 'Ta en kort pause'] },
+    { re: /regning|betal|nettbank|søknad|skjema|bestill|avtale|time hos|faktura/i, steps: () => ['Finn fram innlogging og det du trenger', 'Gjør bare første steg (åpne siden)', 'Fyll inn eller betal', 'Bekreft at det gikk gjennom'] },
+    { re: /hund|katt|dyr|fôr|kattesand|lufte/i, steps: () => ['Finn fram det du trenger', 'Gjør det sammen med dyret', 'Rydd bort etterpå', 'Kos litt som belønning'] }
   ];
   function localBreakDown(title) {
+    const example = PLStore.findExample(title);
+    if (example) return [...example.steps];
     const hit = LOCAL_STEPS.find((x) => x.re.test(title));
     if (hit) return hit.steps(title);
-    return [`Finn fram det du trenger til «${title}»`, 'Sett en timer på 5 minutter og begynn på den enkleste delen', `Gjør hoveddelen av «${title}»`, 'Avslutt eller rydd opp etter deg', 'Huk av og feir 🎉'];
+    return ['Finn fram det du trenger', 'Sett timer på 5 minutter og gjør den første, enkleste delen', 'Fortsett til du er ferdig eller timeren ringer', 'Avslutt eller rydd opp etter deg', 'Huk av og feir 🎉'];
   }
   function localKickstart(title, steps) {
     const first = steps && steps.length ? steps[0] : 'den aller minste delen';

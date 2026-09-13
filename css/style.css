@@ -135,9 +135,8 @@ a { color: var(--primary); }
   white-space: nowrap;
 }
 .chip.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
-.chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; scrollbar-width: none; }
-.chips::-webkit-scrollbar { display: none; }
-.chips.wrap { flex-wrap: wrap; overflow: visible; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+.chip.small { font-size: .78rem; padding: 4px 10px; }
 
 .input, select.input, textarea.input {
   width: 100%; border: 1px solid var(--border); background: var(--surface); border-radius: 12px;
@@ -148,6 +147,12 @@ textarea.input { min-height: 80px; resize: vertical; }
 label.field { display: block; margin-bottom: 12px; }
 label.field > span { display: block; font-size: .8rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dt { display: flex; gap: 6px; }
+.dt .input { flex: 1; min-width: 0; }
+.dt input[type="date"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.swatches button { width: 30px; height: 30px; border-radius: 50%; border: 3px solid transparent; }
+.swatches button.on { border-color: var(--text); }
 .day-toggle { display: flex; gap: 6px; }
 .day-toggle button { flex: 1; border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 8px 0; font-weight: 600; font-size: .85rem; }
 .day-toggle button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
