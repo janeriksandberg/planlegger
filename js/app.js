@@ -76,7 +76,7 @@
       </div></div>`;
   }
 
-  const APP_VERSION = '15';
+  const APP_VERSION = '16';
 
   // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
   function setupServiceWorker() {
@@ -187,7 +187,7 @@
   }
   // Tidsfelt: tekst (tt:mm) + 🕒 som åpner et eget velgerark. Samme mønster som datofeltet.
   function timeField(name, hm, picker) {
-    const inp = `<input class="input" name="${name}" value="${esc(hm || '')}" placeholder="tt:mm" inputmode="numeric" autocomplete="off">`;
+    const inp = `<input class="input" name="${name}" value="${esc(hm || '')}" placeholder="f.eks. 1430" inputmode="numeric" autocomplete="off" data-input="time">`;
     if (!picker) return inp;
     return `<div class="dt">${inp}<button type="button" class="btn icon outline" data-act="openTimePicker" data-for="${name}" aria-label="Velg klokkeslett">🕒</button></div>`;
   }
@@ -366,27 +366,19 @@
         <div class="row"><button class="btn light" data-act="${current.kind === 'event' ? 'focusEvent' : 'focusTask'}" data-id="${current.id}" data-date="${today}">▶ Fokus</button>
         <button class="btn" data-act="${current.kind === 'event' ? 'toggleOcc' : 'toggleTask'}" data-id="${current.id}" data-date="${today}">✓ Ferdig</button></div>
       </div>`;
-    } else if (next && (next.start - nm <= 60 || !openTasks.length)) {
+    } else if (next) {
+      // Bare tidfestede ting vises her. Oppgaver uten klokkeslett ligger i lista under.
       const diff = next.start - nm;
       nowCard = `<div class="card now-card">
         <div class="eyebrow">Neste · om ${fmtDur(diff)} (kl. ${S.minToHm(next.start)})</div>
         <h2>${esc(next.title)}</h2>
-        <div class="row"><button class="btn light" data-act="${next.kind === 'event' ? 'focusEvent' : 'focusTask'}" data-id="${next.id}" data-date="${today}">▶ Start nå</button>
-        ${openTasks.length ? `<button class="btn" data-act="focusTask" data-id="${openTasks[0].id}">Eller: ${esc(openTasks[0].title.slice(0, 24))}${openTasks[0].title.length > 24 ? '…' : ''}</button>` : ''}</div>
-      </div>`;
-    } else if (openTasks.length) {
-      const t = openTasks[0];
-      nowCard = `<div class="card now-card">
-        <div class="eyebrow">${t.prio === 1 ? 'Dagens viktigste' : 'Forslag'} · én ting om gangen${dayE ? ' · ' + { low: 'lav', medium: 'middels', high: 'høy' }[dayE] + ' energi' : ''}</div>
-        <h2>${esc(t.title)}</h2>
-        <div class="row"><button class="btn light" data-act="focusTask" data-id="${t.id}">▶ Start ${t.plannedDuration || 25} min</button>
-        <button class="btn" data-act="toggleTask" data-id="${t.id}">✓ Ferdig</button></div>
-        ${next ? `<p class="small" style="opacity:.85;margin:10px 0 0">Neste i planen: kl. ${S.minToHm(next.start)} ${esc(next.title)} (om ${fmtDur(next.start - nm)})</p>` : ''}
+        <div class="row"><button class="btn light" data-act="${next.kind === 'event' ? 'focusEvent' : 'focusTask'}" data-id="${next.id}" data-date="${today}">▶ Start nå</button></div>
       </div>`;
     } else {
-      nowCard = `<div class="card now-card"><h2>${todayCount ? 'Alt er gjort. Nyt resten av dagen 🌿' : 'Ingenting planlagt akkurat nå'}</h2>
-        <p class="small" style="opacity:.9">${todayCount ? 'Du kan alltid legge til noe lite, men du trenger ikke.' : 'Velg én liten ting å begynne med.'}</p>
-        <div class="row"><button class="btn light" data-act="fab">+ Legg til</button><button class="btn" data-act="pickTasks">Hent fra lister</button></div></div>`;
+      const allDone = entries.length && entries.every((e) => e.done);
+      nowCard = `<div class="card now-card"><h2>${allDone ? 'Alt i planen er gjort 🌿' : 'Ingenting tidfestet akkurat nå'}</h2>
+        <p class="small" style="opacity:.9">${allDone ? 'Bra jobba. Resten av dagen er din.' : openTasks.length ? `${openTasks.length} ${openTasks.length === 1 ? 'oppgave' : 'oppgaver'} uten klokkeslett ligger under.` : 'Legg til en aktivitet med klokkeslett, så dukker den opp her.'}</p>
+        <div class="row"><button class="btn light" data-act="newEvent">+ Aktivitet</button><button class="btn" data-act="pickTasks">Hent fra lister</button></div></div>`;
     }
 
     return `
@@ -651,8 +643,17 @@
   let modalDirty = false; // noe er skrevet i skjemaet – vern mot å miste det ved feiltrykk
   function openModal(html) { $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModalBg"><div class="modal">${html}</div></div>`; modalDirty = false; revealActiveChips(); }
   function tryCloseModal() {
-    if (modalDirty && $('#modal form') && !confirm('Lukke uten å lagre det du har skrevet?')) return;
+    if (modalDirty && $('#modal form')) { askSheet('Forkaste det du har skrevet?', 'Forkast', () => closeModal(), true); return; }
     closeModal();
+  }
+  // Egen bekreftelse (i stedet for window.confirm, som kan svikte i installerte apper på iOS).
+  let askCb = null;
+  function askSheet(text, okLabel, onOk, danger) {
+    askCb = onOk;
+    $('#picker').innerHTML = `<div class="picker-bg" data-act="tpClose"><div class="picker" role="alertdialog">
+      <p style="font-weight:600;margin:4px 0 14px">${esc(text)}</p>
+      <div class="row"><button class="btn outline grow" data-act="askNo">Avbryt</button><button class="btn ${danger ? 'danger' : 'primary'} grow" data-act="askYes">${esc(okLabel)}</button></div>
+    </div></div>`;
   }
   // Ruller valgt kategori inn i synsfeltet i rullbare chip-rader.
   function revealActiveChips() {
@@ -697,6 +698,7 @@
           <button class="btn primary" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button>
           <button class="btn outline" type="button" data-act="aiBreakDown" data-id="${task.id || ''}">✨ Bryt ned i steg</button>
           ${isNew ? '' : `<button class="btn outline" type="button" data-act="focusTask" data-id="${task.id}">▶ Fokus</button>`}
+          <button class="btn ghost" type="button" data-act="closeModal">Avbryt</button>
         </div>
       </form>
       ${isNew ? '' : `
@@ -739,7 +741,7 @@
           <label class="field"><span>Steg / sjekkliste (ett per linje)</span><textarea class="input" name="stepsText">${esc((e.steps || []).map((s) => s.title).join('\n'))}</textarea></label>
           <label class="field"><span>Notat</span><textarea class="input" name="notes" style="min-height:56px">${esc(e.notes || '')}</textarea></label>
         </details>
-        <div class="actions"><button class="btn primary" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button>${isNew ? '' : `<button class="btn outline" type="button" data-act="focusEvent" data-id="${e.id}" data-date="${date || S.ymd()}">▶ Fokus</button>`}<button class="btn ghost" type="button" data-act="saveAsTpl">Lagre som mal</button></div>
+        <div class="actions"><button class="btn primary" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button>${isNew ? '' : `<button class="btn outline" type="button" data-act="focusEvent" data-id="${e.id}" data-date="${date || S.ymd()}">▶ Fokus</button>`}<button class="btn ghost" type="button" data-act="saveAsTpl">Lagre som mal</button><button class="btn ghost" type="button" data-act="closeModal">Avbryt</button></div>
       </form>`;
   }
   function nextQuarter() { const m = Math.ceil((nowMin() + 1) / 15) * 15; return S.minToHm(m % 1440); }
@@ -942,8 +944,8 @@
       </div>`);
     },
     retryLogin: () => { S.lockDevice(); renderLogin(); },
-    wipeAll: () => { if (confirm('Slette alle data på denne enheten? Dette kan ikke angres.')) { S.wipe(); location.reload(); } },
-    lock: () => { if (confirm('Låse enheten? Du må skrive inn passordet neste gang.')) { S.lockDevice(); location.reload(); } },
+    wipeAll: () => askSheet('Slette alle data på denne enheten? Dette kan ikke angres.', 'Slett alt', () => { S.wipe(); location.reload(); }, true),
+    lock: () => askSheet('Låse enheten? Du må skrive inn passordet neste gang.', 'Lås', () => { S.lockDevice(); location.reload(); }),
 
     // Dato/tid-felter
     pickDate: (d, el) => {
@@ -953,7 +955,9 @@
     },
     setDate: (d, el) => { el.closest('form')[d.for].value = S.fmtNb(d.v); },
     openTimePicker: (d, el) => { const f = el.closest('form'); if (f && f[d.for]) openTimePicker(f[d.for]); },
-    tpClose: (d, el, e) => { if (e.target === el || el.dataset.act === 'tpClose' && el.tagName === 'BUTTON') closeTimePicker(); },
+    tpClose: (d, el, e) => { if (e.target === el || el.tagName === 'BUTTON') closeTimePicker(); },
+    askYes: () => { const cb = askCb; askCb = null; closeTimePicker(); if (cb) cb(); },
+    askNo: () => { askCb = null; closeTimePicker(); },
     tpHour: (d) => { tp.hh = d.v; syncTimePicker(); },
     tpMin: (d) => { tp.mm = d.v; if (!tp.hh) tp.hh = String(new Date().getHours()).padStart(2, '0'); applyTimePicker(`${tp.hh}:${tp.mm}`); },
     tpQuick: (d) => { const m = d.v === 'now' ? Math.ceil((nowMin() + 1) / 5) * 5 : Math.ceil((nowMin() + +d.v) / 5) * 5; applyTimePicker(S.minToHm(m % 1440)); },
@@ -1041,7 +1045,7 @@
     unscheduleTask: (d) => { S.updateTask(d.id, { plannedTime: '', plannedDuration: 0 }); closeModal(); render(); },
     toggleStep: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); const s = t && t.steps.find((x) => x.id === d.step); const news = S.toggleStep(d.id, d.step); celebrate(news, s && s.done ? S.POINTS.step : 0); openModal(taskModal(t)); render(); },
     deleteStep: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return; S.updateTask(d.id, { steps: t.steps.filter((s) => s.id !== d.step) }); openModal(taskModal(t)); },
-    clearDone: () => { if (confirm('Fjerne alle ferdige oppgaver fra lista? Poengene beholdes.')) { S.state.tasks = S.state.tasks.filter((t) => !t.done); S.save(); render(); } },
+    clearDone: () => askSheet('Fjerne alle ferdige oppgaver fra lista? Poengene beholdes.', 'Rydd bort', () => { S.state.tasks = S.state.tasks.filter((t) => !t.done); S.save(); render(); }, true),
     listFilter: (d) => { listFilter = d.v; render(); },
     listCat: (d) => { listCat = d.v; render(); },
     formCat: (d, el) => { syncFormCat(el.closest('form'), d.v); revealActiveChips(); },
@@ -1056,10 +1060,13 @@
         modalDirty = true; return;
       }
       const t = S.state.tasks.find((z) => z.id === f.dataset.id); if (!t) return;
-      if (x.steps.length && (!t.steps.length || confirm('Erstatte stegene på oppgaven med standardstegene for dette forslaget?'))) {
+      const apply = () => {
         S.updateTask(t.id, { title: x.title, cat: c.id, steps: x.steps.map((title) => ({ id: S.uid(), title, done: false })) });
         openModal(taskModal(S.state.tasks.find((z) => z.id === t.id))); render(); toast(`Fylte inn ${x.steps.length} steg`);
-      } else S.updateTask(t.id, { title: x.title, cat: c.id });
+      };
+      if (!x.steps.length) S.updateTask(t.id, { title: x.title, cat: c.id });
+      else if (!t.steps.length) apply();
+      else askSheet('Erstatte stegene på oppgaven med standardstegene for dette forslaget?', 'Erstatt', apply);
     },
     pickTasks: () => {
       const today = S.ymd();
@@ -1122,12 +1129,12 @@
     deleteCat: (d) => {
       const c = S.catById(d.id);
       const used = S.state.tasks.filter((t) => t.cat === d.id).length + S.state.events.filter((e) => e.cat === d.id).length;
-      if (confirm(`Slette kategorien «${c.name}»?${used ? ` ${used} oppgaver/aktiviteter flyttes til en annen kategori.` : ''}`)) { S.deleteCategory(d.id); closeModal(); render(); toast('Kategori slettet'); }
+      askSheet(`Slette kategorien «${c.name}»?${used ? ` ${used} oppgaver/aktiviteter flyttes til en annen kategori.` : ''}`, 'Slett', () => { S.deleteCategory(d.id); closeModal(); render(); toast('Kategori slettet'); }, true);
     },
     editExample: (d) => openModal(exampleModal(d.cat, d.i === undefined || d.i === '' ? undefined : +d.i)),
     deleteExample: (d) => { const c = S.catById(d.cat); c.examples.splice(+d.i, 1); S.updateCategory(c.id, {}); openModal(catModal(c)); },
     editTpl: (d) => openModal(tplModal(d.id ? S.templates().find((t) => t.id === d.id) : null)),
-    deleteTpl: (d) => { if (confirm('Slette malen?')) { S.deleteTemplate(d.id); closeModal(); render(); } },
+    deleteTpl: (d) => askSheet('Slette malen?', 'Slett', () => { S.deleteTemplate(d.id); closeModal(); render(); }, true),
 
     // Fokus
     focusTask: (d) => startFocus('task', d.id, S.ymd()),
@@ -1354,6 +1361,11 @@
   document.addEventListener('input', (e) => {
     if (e.target.closest('#modal form')) modalDirty = true;
     if (e.target.matches('[data-input="quickTitle"]')) { const tag = $('#quickTag'); if (tag) tag.innerHTML = quickTagText(e.target.value); }
+    // Tidsfelt: mobiltastaturet mangler kolon, så «1430» blir «14:30» automatisk.
+    if (e.target.matches('[data-input="time"]')) { const v = e.target.value; if (/^\d{4}$/.test(v)) e.target.value = v.slice(0, 2) + ':' + v.slice(2); }
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.matches('[data-input="time"]') && e.target.value.trim()) { const t = S.parseTime(e.target.value); if (t) e.target.value = t; }
   });
 
   // Sveip sidelengs på elementer med data-swipe for å bla mellom dager.
