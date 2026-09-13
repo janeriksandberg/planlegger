@@ -76,11 +76,27 @@
       </div></div>`;
   }
 
+  const APP_VERSION = '8';
+
+  // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
+  function setupServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloading) return;
+      reloading = true; toast('Appen er oppdatert til ny versjon. Laster på nytt …', true);
+      setTimeout(() => location.reload(), 800);
+    });
+    navigator.serviceWorker.register('sw.js').then((reg) => { reg.update().catch(() => {}); }).catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) navigator.serviceWorker.getRegistration().then((r) => r && r.update().catch(() => {})); });
+  }
+
   async function start() {
     applyTheme(S.state.settings.theme);
     renderShell();
     render();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    setupServiceWorker();
     setInterval(() => { checkReminders(); if (view === 'today' && !$('#modal').innerHTML) render(); }, 60000);
     checkReminders();
   }
@@ -533,6 +549,7 @@
           <li><b>Umiddelbar belønning</b> (poeng, feiring, merker) og <b>tilgivende streaks</b>: rask tilbakemelding uten straff.</li>
           <li><b>Rutiner og maler</b>: faste strukturer krever mindre viljestyrke enn å planlegge fra bunnen.</li>
         </ul>
+        <p class="tiny mt">Versjon ${APP_VERSION} · <button class="btn sm ghost" data-act="checkUpdate">Se etter oppdatering</button></p>
       </div>`;
   }
 
@@ -1061,6 +1078,14 @@
       const link = $('#aiKeyLink'); if (link) link.innerHTML = p.url ? `Hent nøkkel: <a href="${p.url}" target="_blank" rel="noopener">${p.url.replace(/^https?:\/\//, '')}</a>` : '';
     },
     askNotify: async () => { if ('Notification' in window) { await Notification.requestPermission(); render(); } },
+    checkUpdate: async () => {
+      if (!('serviceWorker' in navigator)) { location.reload(); return; }
+      toast('Ser etter oppdatering …');
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) { location.reload(); return; }
+      await reg.update().catch(() => {});
+      setTimeout(() => { if (!reg.installing && !reg.waiting) toast('Du har nyeste versjon ✔'); }, 2500);
+    },
     export: () => download(`planlegger-${S.ymd()}.json`, S.exportJson(), 'application/json'),
     exportIcs: () => { download('planlegger.ics', S.exportIcs(), 'text/calendar'); toast('Kalenderfil lastet ned. Åpne den i kalenderappen din.', true); }
   };
