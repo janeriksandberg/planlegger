@@ -76,7 +76,7 @@
       </div></div>`;
   }
 
-  const APP_VERSION = '9';
+  const APP_VERSION = '10';
 
   // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
   function setupServiceWorker() {
@@ -119,6 +119,7 @@
     $('.fab').hidden = view === 'more';
     $('#main').innerHTML = { today: renderToday, lists: renderLists, plan: renderPlan, more: renderMore }[view]();
     if (view === 'more') fillSettingsForm();
+    revealActiveChips();
   }
 
   // ---------- Felles byggeklosser ----------
@@ -145,6 +146,20 @@
     return shortDate(due);
   }
   function catOptions(sel) { return S.cats().map((c) => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.emoji} ${esc(c.name)}</option>`).join(''); }
+  // Kategorichips (rullbar rad). `act` er handlingen som kjøres ved trykk.
+  function catChipsHtml(sel, act) {
+    return `<div class="chips scroll cat-chips">${S.cats().map((x) => `<button type="button" class="chip ${x.id === sel ? 'active' : ''}" data-act="${act}" data-v="${x.id}" style="${x.id === sel ? `border-color:${x.color};color:${x.color};background:${x.color}1a` : ''}">${x.emoji} ${esc(x.name)}</button>`).join('')}</div>`;
+  }
+  // Oppdaterer chips + skjult felt + forslag i et skjema uten å tegne alt på nytt.
+  function syncFormCat(f, id) {
+    f.cat.value = id;
+    $$('.cat-chips .chip', f).forEach((b) => {
+      const c = S.catById(b.dataset.v); const on = b.dataset.v === id;
+      b.classList.toggle('active', on);
+      b.style.cssText = on ? `border-color:${c.color};color:${c.color};background:${c.color}1a` : '';
+    });
+    const ex = $('#examples', f); if (ex) ex.outerHTML = exampleChips(id);
+  }
   function exampleChips(catId) {
     const c = S.catById(catId);
     if (!c.examples.length) return `<div id="examples" class="tiny muted">Ingen forslag i denne kategorien ennå. Legg til under Mer → Kategorier.</div>`;
@@ -363,13 +378,15 @@
     const catId = quickCatId(); const c = S.catById(catId);
     const today = S.ymd();
     const existing = new Set(S.state.tasks.filter((t) => !t.done && t.today === today).map((t) => t.title.toLowerCase()));
+    const annet = S.catById(S.defaultCatId());
     return `<form data-form="quickAdd" class="quick mb">
       <div class="row">
-        <input class="input grow" name="title" placeholder="Skriv en oppgave, eller velg et forslag under…" autocomplete="off">
+        <input class="input grow" name="title" placeholder="Skriv fritt (havner under ${esc(annet.name)}) …" autocomplete="off">
         <button class="btn primary icon" type="submit" aria-label="Legg til">${ICONS.plus}</button>
       </div>
       <input type="hidden" name="cat" value="${catId}">
-      <div class="chips scroll" style="margin-top:8px">${S.cats().map((x) => `<button type="button" class="chip ${x.id === catId ? 'active' : ''}" data-act="quickCat" data-v="${x.id}" style="${x.id === catId ? `border-color:${x.color};color:${x.color};background:${x.color}1a` : ''}">${x.emoji} ${esc(x.name)}</button>`).join('')}</div>
+      <div class="tiny muted" style="margin-top:8px">Eller velg kategori og trykk på et forslag:</div>
+      ${catChipsHtml(catId, 'quickCat')}
       <div class="chips" style="margin-top:2px">${c.examples.length
         ? c.examples.map((x, i) => existing.has(x.title.toLowerCase())
           ? `<span class="chip small" style="opacity:.45" title="Ligger allerede i dag">✓ ${esc(x.title)}</span>`
@@ -580,24 +597,29 @@
   }
 
   // ---------- Modaler ----------
-  function openModal(html) { $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModalBg"><div class="modal">${html}</div></div>`; }
+  function openModal(html) { $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModalBg"><div class="modal">${html}</div></div>`; revealActiveChips(); }
+  // Ruller valgt kategori inn i synsfeltet i rullbare chip-rader.
+  function revealActiveChips() {
+    $$('.cat-chips').forEach((row) => { const a = row.querySelector('.chip.active'); if (a) row.scrollLeft = a.offsetLeft - row.clientWidth / 2 + a.offsetWidth / 2; });
+  }
   function closeModal() { $('#modal').innerHTML = ''; }
   const modalHead = (title, extra = '') => `<div class="row between mb"><h2>${title}</h2><div class="row">${extra}<button class="btn sm ghost" data-act="closeModal" aria-label="Lukk">✕</button></div></div>`;
 
   function taskModal(t, prefill) {
     const isNew = !t;
-    const task = t || { title: '', cat: S.cats()[0].id, due: '', energy: 'medium', today: '', steps: [], notes: '', trigger: '', prio: 2, ...(prefill || {}) };
+    const task = t || { title: '', cat: S.defaultCatId(), due: '', energy: 'medium', today: '', steps: [], notes: '', trigger: '', prio: 2, ...(prefill || {}) };
     const today = S.ymd();
     const more = !!(task.due || task.trigger || task.notes || (isNew && task.steps.length) || (task.energy && task.energy !== 'medium'));
     return `
       ${modalHead(isNew ? 'Ny oppgave' : 'Oppgave', isNew ? '' : `<button class="btn sm ghost" data-act="deleteTask" data-id="${task.id}" aria-label="Slett">🗑️</button>`)}
       <form data-form="saveTask" data-id="${task.id || ''}">
         ${prefill && prefill.inboxId ? `<input type="hidden" name="inboxId" value="${prefill.inboxId}">` : ''}
-        <label class="field"><span>Hva skal gjøres?</span><input class="input" name="title" value="${esc(task.title)}" required autocomplete="off" ${isNew ? 'autofocus' : ''}></label>
-        <label class="field"><span>Kategori</span><select class="input" name="cat" data-change="catExamples">${catOptions(task.cat)}</select></label>
-        <div class="tiny muted">Forslag (fyller inn tittel og standardsteg):</div>
+        <input type="hidden" name="cat" value="${task.cat}">
+        <div class="field"><span style="display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:5px">1. Kategori</span>${catChipsHtml(task.cat, 'formCat')}</div>
+        <div class="tiny muted">Forslag (fyller inn navn og standardsteg):</div>
         ${exampleChips(task.cat)}
-        <div class="chips mt mb">
+        <label class="field mt"><span>2. Hva skal gjøres?</span><input class="input" name="title" value="${esc(task.title)}" required autocomplete="off" placeholder="Skriv selv, eller velg et forslag over"></label>
+        <div class="chips mb">
           <label class="chip"><input type="checkbox" name="today" hidden ${task.today === today ? 'checked' : ''}>📅 Legg i dagens plan</label>
           <label class="chip"><input type="checkbox" name="star" hidden ${task.prio === 1 ? 'checked' : ''}>★ En av dagens viktigste</label>
         </div>
@@ -634,17 +656,18 @@
 
   function eventModal(ev, date, tpl) {
     const isNew = !ev;
-    const e = ev || (tpl ? S.makeEventFromTemplate(tpl, date || selectedDate) : { title: '', cat: S.cats()[0].id, date: date || selectedDate, time: nextQuarter(), duration: 30, recur: { type: 'none', days: [], until: '' }, steps: [], notes: '', trigger: '' });
+    const e = ev || (tpl ? S.makeEventFromTemplate(tpl, date || selectedDate) : { title: '', cat: S.defaultCatId(), date: date || selectedDate, time: nextQuarter(), duration: 30, recur: { type: 'none', days: [], until: '' }, steps: [], notes: '', trigger: '' });
     const more = !!((e.recur && e.recur.type !== 'none') || (e.steps && e.steps.length) || e.notes || e.trigger);
     return `
       ${modalHead(isNew ? 'Ny aktivitet' : 'Aktivitet', isNew ? '' : `<button class="btn sm ghost" data-act="deleteEventMenu" data-id="${e.id}" data-date="${date || ''}" aria-label="Slett">🗑️</button>`)}
       ${isNew ? `<div class="tiny muted">Maler:</div><div class="chips mb">${S.templates().map((t) => `<button type="button" class="chip small" data-act="applyTemplate" data-id="${t.id}">${S.catById(t.cat).emoji} ${esc(t.title)}</button>`).join('')}</div>` : ''}
       <form data-form="saveEvent" data-id="${e.id || ''}">
-        <label class="field"><span>Aktivitet</span><input class="input" name="title" value="${esc(e.title)}" required autocomplete="off"></label>
-        <label class="field"><span>Kategori</span><select class="input" name="cat" data-change="catExamples">${catOptions(e.cat)}</select></label>
-        <div class="tiny muted">Forslag (fyller inn tittel og sjekkliste):</div>
+        <input type="hidden" name="cat" value="${e.cat}">
+        <div class="field"><span style="display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:5px">Kategori</span>${catChipsHtml(e.cat, 'formCat')}</div>
+        <div class="tiny muted">Forslag (fyller inn navn og sjekkliste):</div>
         ${exampleChips(e.cat)}
-        <label class="field mt"><span>Dato</span>${dateField('date', e.date, dateChips(false))}</label>
+        <label class="field mt"><span>Aktivitet</span><input class="input" name="title" value="${esc(e.title)}" required autocomplete="off" placeholder="Skriv selv, eller velg et forslag over"></label>
+        <label class="field"><span>Dato</span>${dateField('date', e.date, dateChips(false))}</label>
         <div class="grid2">
           <label class="field"><span>Klokkeslett (tt:mm)</span>${timeField('time', e.time, true)}</label>
           <label class="field"><span>Varighet (min)</span><input class="input" type="number" name="duration" min="1" max="720" value="${e.duration}"></label>
@@ -937,11 +960,12 @@
     clearDone: () => { if (confirm('Fjerne alle ferdige oppgaver fra lista? Poengene beholdes.')) { S.state.tasks = S.state.tasks.filter((t) => !t.done); S.save(); render(); } },
     listFilter: (d) => { listFilter = d.v; render(); },
     listCat: (d) => { listCat = d.v; render(); },
+    formCat: (d, el) => { syncFormCat(el.closest('form'), d.v); revealActiveChips(); },
     useExample: (d, el) => {
       const c = S.catById(d.cat); const x = c.examples[+d.i]; if (!x) return;
       const f = el.closest('form');
       f.title.value = x.title;
-      if (f.cat && f.cat.value !== c.id) f.cat.value = c.id;
+      if (f.cat && f.cat.value !== c.id) syncFormCat(f, c.id);
       if (f.stepsText) {
         f.stepsText.value = x.steps.join('\n');
         const det = f.querySelector('details.more'); if (det && x.steps.length) det.open = true;
@@ -971,10 +995,10 @@
     newEventTpl: (d) => { const t = S.templates().find((x) => x.id === d.id); if (t) openModal(eventModal(null, selectedDate, t)); },
     applyTemplate: (d, el) => {
       const t = S.templates().find((x) => x.id === d.id); if (!t) return; const f = el.closest('.modal').querySelector('form');
-      f.title.value = t.title; f.cat.value = t.cat; f.time.value = t.time; f.duration.value = t.duration; f.recur.value = t.recur || 'none'; f.stepsText.value = (t.steps || []).join('\n');
+      f.title.value = t.title; f.time.value = t.time; f.duration.value = t.duration; f.recur.value = t.recur || 'none'; f.stepsText.value = (t.steps || []).join('\n');
+      syncFormCat(f, t.cat);
       $$('#weekdays button').forEach((b) => b.classList.toggle('on', (t.days || []).includes(+b.dataset.day)));
       $('#weekdays').hidden = f.recur.value !== 'weekly'; $('#untilField').hidden = f.recur.value === 'none';
-      $('#examples').outerHTML = exampleChips(t.cat);
       const det = f.querySelector('details.more'); if (det && (f.recur.value !== 'none' || (t.steps || []).length)) det.open = true;
       toast('Mal fylt inn');
     },
@@ -1132,12 +1156,13 @@
     },
     quickAdd: (f) => {
       const d = readForm(f); if (!d.title.trim()) return;
+      // Fritekst havner under «Annet» med mindre teksten matcher et forslag; da brukes forslagets kategori.
       const x = S.findExample(d.title, d.cat);
-      const cat = x ? x.cat : d.cat;
-      S.addTask({ title: d.title.trim(), cat, today: S.ymd(), steps: x ? x.steps.map((title) => ({ id: S.uid(), title, done: false })) : [] });
-      S.state.settings.lastCat = cat; S.save(); render();
+      const cat = x ? x.cat : S.defaultCatId();
+      const t = S.addTask({ title: d.title.trim(), cat, today: S.ymd(), steps: x ? x.steps.map((title) => ({ id: S.uid(), title, done: false })) : [] });
+      render();
       const cname = S.catById(cat).name;
-      toast(x ? `Lagt til under ${cname} med ${x.steps.length} steg ✔` : `Lagt til under ${cname} ✔`);
+      undoToast(x ? `Lagt til under ${cname} med ${x.steps.length} steg` : `Lagt til under ${cname}. Endre kategori via ⋯ → Rediger.`, () => S.deleteTask(t.id));
       const inp = $('form[data-form="quickAdd"] input'); if (inp) inp.focus();
     },
     inboxAdd: (f) => {

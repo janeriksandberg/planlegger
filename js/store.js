@@ -68,7 +68,8 @@ window.PLStore = (() => {
       ex('Bytte kattesand', ['Finne fram pose og ny sand', 'Tømme kassen', 'Fylle på ny sand', 'Kaste posen']),
       ex('Kjøpe dyremat', ['Sjekke hva som er tomt', 'Skrive på handlelista', 'Kjøpe']),
       ex('Bestille veterinærtime', ['Finne nummeret', 'Ha kalenderen klar', 'Ringe', 'Legge timen i planen'])
-    ] }
+    ] },
+    { id: 'annet',   name: 'Annet',           emoji: '📌', color: '#94a3b8', examples: [] }
   ];
   const CATEGORY_COLORS = ['#f59e0b', '#3b82f6', '#ef4444', '#22c55e', '#a855f7', '#64748b', '#14b8a6', '#ec4899', '#f97316', '#06b6d4', '#84cc16', '#8b5cf6'];
 
@@ -164,6 +165,8 @@ window.PLStore = (() => {
   // --- Kategorier og maler (brukerens egne) ---
   const cats = () => state.categories;
   const templates = () => state.templates;
+  // Standardkategori for fritekst: «Annet» hvis den finnes, ellers første kategori.
+  const defaultCatId = () => (state.categories.some((c) => c.id === 'annet') ? 'annet' : state.categories[0].id);
   function catById(id) {
     return (state && state.categories.find((c) => c.id === id)) || DEFAULT_CATEGORIES.find((c) => c.id === id) || { id, name: 'Uten kategori', emoji: '📁', color: '#94a3b8', examples: [] };
   }
@@ -279,6 +282,7 @@ window.PLStore = (() => {
       const dyr = cloneCats().find((c) => c.id === 'dyr');
       if (dyr) state.categories.push(dyr);
     }
+    if (!state.categories.some((c) => c.id === 'annet')) state.categories.push({ id: 'annet', name: 'Annet', emoji: '📌', color: '#94a3b8', examples: [] });
     if (!Array.isArray(state.templates)) state.templates = cloneTemplates();
     state.events.forEach((e) => { e.done = e.done || {}; e.skipped = e.skipped || {}; e.stepDone = e.stepDone || {}; e.steps = e.steps || []; e.recur = e.recur || { type: 'none', days: [], until: '' }; });
     state.tasks.forEach((t) => { t.steps = t.steps || []; });
@@ -467,7 +471,7 @@ window.PLStore = (() => {
   }
 
   return {
-    CATEGORY_COLORS, BADGES, POINTS, cats, templates, catById, findExample, makeEventFromTemplate,
+    CATEGORY_COLORS, BADGES, POINTS, cats, templates, catById, defaultCatId, findExample, makeEventFromTemplate,
     addCategory, updateCategory, deleteCategory, addTemplate, updateTemplate, deleteTemplate,
     ymd, parseYmd, addDays, isoDow, mondayOf, hm, minutesOf, minToHm, uid, fmtNb, parseNb, parseTime,
     get state() { return state; },

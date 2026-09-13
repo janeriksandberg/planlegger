@@ -1,6 +1,6 @@
 // Service worker: nettverk først (alltid revalidert mot serveren), cache som reserve for offline.
 // Bump VERSION ved hver utrulling (og ?v= i index.html).
-const VERSION = 'v9';
+const VERSION = 'v10';
 const CACHE = 'planlegger-' + VERSION;
 const ASSETS = ['./', './index.html', './css/style.css', './js/config.js', './js/crypto.js', './js/store.js', './js/ai.js', './js/app.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-maskable.svg'];
 
