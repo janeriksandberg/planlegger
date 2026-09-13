@@ -432,6 +432,9 @@ window.PLStore = (() => {
   }
   function updateTask(id, patch) { const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, patch); save(); return t; }
   function deleteTask(id) { state.tasks = state.tasks.filter((t) => t.id !== id); save(); }
+  function restoreTask(t, index) { if (state.tasks.some((x) => x.id === t.id)) return; state.tasks.splice(Math.min(Math.max(index, 0), state.tasks.length), 0, t); save(); }
+  function restoreEvent(e, index) { if (state.events.some((x) => x.id === e.id)) return; state.events.splice(Math.min(Math.max(index, 0), state.events.length), 0, e); save(); }
+  function unskipOccurrence(id, date) { const e = state.events.find((x) => x.id === id); if (e) { delete e.skipped[date]; save(); } }
   function toggleTask(id) {
     const t = state.tasks.find((x) => x.id === id); if (!t) return [];
     t.done = !t.done; t.doneAt = t.done ? Date.now() : null;
@@ -472,7 +475,7 @@ window.PLStore = (() => {
     hasDeviceKey, hasData, unlockWithPassword, unlockWithDevice, lockDevice, wipe, rekey, changePassword, save, exportJson, exportIcs, importJson,
     addInbox, deleteInbox, setEnergy, energyOn,
     occursOn, occurrencesOn, recurLabel, levelOf, totalDone,
-    addTask, updateTask, deleteTask, toggleTask, toggleStep,
-    addEvent, updateEvent, deleteEvent, skipOccurrence, toggleOccurrence, toggleEventStep
+    addTask, updateTask, deleteTask, restoreTask, toggleTask, toggleStep,
+    addEvent, updateEvent, deleteEvent, restoreEvent, skipOccurrence, unskipOccurrence, toggleOccurrence, toggleEventStep
   };
 })();

@@ -114,10 +114,10 @@
     const lv = S.levelOf(g.points);
     const today = g.history[S.ymd()] || 0;
     const goal = S.state.settings.dailyGoal;
-    return `<div class="stats">
-      <div class="stat"><div class="v">⭐ ${g.points}</div><div class="lbl">poeng · nivå ${lv.level}</div></div>
-      <div class="stat"><div class="v">🔥 ${g.streak}</div><div class="lbl">dager på rad</div></div>
-      <div class="stat"><div class="v">🎯 ${Math.min(today, goal)}/${goal}</div><div class="lbl">fullført i dag</div></div>
+    return `<div class="statline">
+      <span title="Poeng og nivå">⭐ <b>${g.points}</b> nivå ${lv.level}</span>
+      <span title="Dager på rad">🔥 <b>${g.streak}</b> ${g.streak === 1 ? 'dag' : 'dager'} på rad</span>
+      <span title="Fullført i dag">🎯 <b>${Math.min(today, goal)}/${goal}</b> i dag</span>
     </div>`;
   }
   function dueLabel(due) {
@@ -150,28 +150,26 @@
   }
   const dateChips = (withNone) => [['I dag', S.ymd()], ['I morgen', S.addDays(S.ymd(), 1)], ['Om en uke', S.addDays(S.ymd(), 7)], ...(withNone ? [['Ingen', '']] : [])];
 
-  function taskItemHtml(t, opts = {}) {
+  // ctx: 'today' | 'list' | 'group' (inne i kategorigruppe – kategorinavn utelates)
+  function taskItemHtml(t, ctx = 'list') {
     const c = S.catById(t.cat);
     const sd = t.steps.filter((s) => s.done).length;
-    const meta = [c.emoji + ' ' + c.name];
+    const meta = ctx === 'group' ? [] : [c.emoji + ' ' + c.name];
     if (t.due) meta.push(dueLabel(t.due));
     if (t.steps.length) meta.push(`${sd}/${t.steps.length} steg`);
-    if (t.energy) meta.push(energyLabel[t.energy]);
+    if (t.energy && t.energy !== 'medium') meta.push(energyLabel[t.energy]);
     if (t.trigger) meta.push('⛓ etter ' + esc(t.trigger));
     if (t.done && t.actualMin) meta.push(`brukte ${t.actualMin} min`);
     return `<div class="item ${t.done ? 'done' : ''}">
       <button class="check ${t.done ? 'on' : ''}" data-act="toggleTask" data-id="${t.id}" aria-label="Fullfør">${t.done ? '✓' : ''}</button>
       <div class="grow" data-act="openTask" data-id="${t.id}" style="cursor:pointer">
         <div class="title">${t.prio === 1 && !t.done ? '<span class="star">★</span> ' : ''}${esc(t.title)}</div>
-        <div class="meta">${meta.join(' · ')}</div>
+        ${meta.length ? `<div class="meta">${meta.join(' · ')}</div>` : ''}
       </div>
-      <div class="item-actions">
-        ${!t.done ? `<button class="btn sm ghost ${t.prio === 1 ? 'starred' : ''}" title="${t.prio === 1 ? 'Fjern fra dagens viktigste' : 'Marker som en av dagens viktigste'}" data-act="toggleStar" data-id="${t.id}">${t.prio === 1 ? '★' : '☆'}</button>` : ''}
-        ${!t.done && opts.schedule ? `<button class="btn sm ghost" title="Sett tidspunkt i dag" data-act="scheduleTask" data-id="${t.id}">🕒</button>` : ''}
-        ${!t.done && opts.postpone ? `<button class="btn sm ghost" title="Utsett til i morgen" data-act="postpone" data-id="${t.id}">⏭</button>` : ''}
-        ${!t.done && opts.addToday ? `<button class="btn sm ghost" title="Legg i dagens plan" data-act="addToday" data-id="${t.id}">📅</button>` : ''}
-        ${!t.done ? `<button class="btn sm ghost" title="Start fokus" data-act="focusTask" data-id="${t.id}">▶</button>` : ''}
-      </div>
+      ${!t.done ? `<div class="item-actions">
+        <button class="btn ghost icon" title="Start fokus" aria-label="Start fokus" data-act="focusTask" data-id="${t.id}">▶</button>
+        <button class="btn ghost icon" title="Flere valg" aria-label="Flere valg" data-act="taskMenu" data-id="${t.id}" data-ctx="${ctx}">⋯</button>
+      </div>` : ''}
     </div>`;
   }
 
@@ -286,26 +284,27 @@
     }
 
     return `
-      <div class="page-head"><div><div class="muted small">${greeting()} 👋</div><h1>${longDate(today)}</h1></div></div>
-      ${statsHtml()}
-      <div class="card energy"><span class="small muted">Energi i dag:</span>
-        ${[['low', 'Lav'], ['medium', 'Middels'], ['high', 'Høy']].map(([v, l]) => `<button class="chip small ${dayE === v ? 'active' : ''}" data-act="setEnergy" data-v="${v}">${l}</button>`).join('')}
-        <span class="tiny muted">${dayE ? 'Forslagene tilpasses.' : 'Valgfritt.'}</span>
-      </div>
+      <div class="page-head"><div><div class="muted small">${greeting()} 👋</div><h1>${longDate(today)}</h1>${statsHtml()}</div></div>
       ${nowCard}
+      <div class="card slim energy"><span class="small muted">Energi i dag</span>
+        ${[['low', 'Lav'], ['medium', 'Middels'], ['high', 'Høy']].map(([v, l]) => `<button class="chip small ${dayE === v ? 'active' : ''}" data-act="setEnergy" data-v="${v}">${l}</button>`).join('')}
+        ${dayE ? '<span class="tiny muted">Forslagene tilpasses</span>' : ''}
+      </div>
       <div class="section-title"><h2>Dagens plan</h2><button class="btn sm ghost" data-act="nav" data-view="plan">Uke →</button></div>
       <div class="card">
         ${entries.length ? timelineHtml(entries, today) : `<div class="empty"><div class="big">🌤️</div>Ingen aktiviteter i dag ennå.<div class="mt"><button class="btn sm outline" data-act="newEvent">+ Legg til aktivitet</button></div></div>`}
       </div>
       <div class="section-title"><h2>Oppgaver i dag${starred ? ` · ${starred} viktigst` : ''}</h2><div class="row"><button class="btn sm ghost" data-act="pickTasks">Hent fra lister</button>${openTasks.length > 1 ? `<button class="btn sm ghost" data-act="aiPlanDay">✨ Planlegg</button>` : ''}</div></div>
       <div class="card">
-        <form data-form="quickAdd" class="row mb">
-          <input class="input grow" name="title" placeholder="Legg til en oppgave for i dag…" autocomplete="off">
-          <select class="input" name="cat" style="width:auto">${catOptions(S.cats()[0].id)}</select>
-          <button class="btn primary icon" type="submit" aria-label="Legg til">${ICONS.plus}</button>
+        <form data-form="quickAdd" class="quick mb">
+          <div class="row">
+            <input class="input grow" name="title" placeholder="Legg til en oppgave for i dag…" autocomplete="off">
+            <button class="btn primary icon" type="submit" aria-label="Legg til">${ICONS.plus}</button>
+          </div>
+          <div class="row" style="margin-top:8px"><span class="tiny muted">Kategori</span><select class="input sm" name="cat">${catOptions(S.cats()[0].id)}</select></div>
         </form>
-        ${openTasks.length > 5 ? `<p class="tiny muted">${openTasks.length} oppgaver i dag er mye. Marker 1–3 med ★, og utsett resten med ⏭ uten dårlig samvittighet.</p>` : ''}
-        ${openTasks.length ? openTasks.map((t) => taskItemHtml(t, { schedule: true, postpone: true })).join('') : `<div class="empty small">Ingen løse oppgaver. ${todayCount ? 'Bra jobba!' : 'Legg til én liten ting.'}</div>`}
+        ${openTasks.length > 5 ? `<p class="tiny muted">${openTasks.length} oppgaver i dag er mye. Marker 1–3 som viktigst, og utsett resten uten dårlig samvittighet (⋯-menyen).</p>` : ''}
+        ${openTasks.length ? openTasks.map((t) => taskItemHtml(t, 'today')).join('') : `<div class="empty small">Ingen løse oppgaver. ${todayCount ? 'Bra jobba!' : 'Legg til én liten ting.'}</div>`}
       </div>
       ${doneToday.length ? `<details class="card"><summary>Fullført i dag (${doneToday.length}) 🎉</summary>${doneToday.map((t) => taskItemHtml(t)).join('')}</details>` : ''}
       <div class="card flat small muted">💡 ${tip()}</div>`;
@@ -344,14 +343,17 @@
         </form>
         ${inbox.map((n) => `<div class="item"><div class="grow">${esc(n.text)}</div><button class="btn sm outline" data-act="inboxToTask" data-id="${n.id}">→ Oppgave</button><button class="btn sm ghost" data-act="inboxDelete" data-id="${n.id}" aria-label="Slett">✕</button></div>`).join('')}
       </div>
-      <div class="chips mb">
-        <button class="chip ${listFilter === 'open' ? 'active' : ''}" data-act="listFilter" data-v="open">Åpne (${openCount})</button>
-        <button class="chip ${listFilter === 'done' ? 'active' : ''}" data-act="listFilter" data-v="done">Ferdige (${doneCount})</button>
-        <span style="width:8px"></span>
+      <div class="row between mb wrap">
+        <div class="seg" role="tablist">
+          <button class="${listFilter === 'open' ? 'on' : ''}" data-act="listFilter" data-v="open">Åpne (${openCount})</button>
+          <button class="${listFilter === 'done' ? 'on' : ''}" data-act="listFilter" data-v="done">Ferdige (${doneCount})</button>
+        </div>
+      </div>
+      <div class="chips scroll mb">
         <button class="chip ${listCat === 'all' ? 'active' : ''}" data-act="listCat" data-v="all">Alle</button>
         ${S.cats().map((c) => `<button class="chip ${listCat === c.id ? 'active' : ''}" data-act="listCat" data-v="${c.id}">${c.emoji} ${esc(c.name)}</button>`).join('')}
       </div>
-      ${groups.length ? groups.map((g) => `<div class="card"><div class="row mb"><span class="cat-dot" style="background:${g.c.color}"></span><h2>${g.c.emoji} ${esc(g.c.name)}</h2><span class="muted small">${g.items.length}</span></div>${g.items.map((t) => taskItemHtml(t, { addToday: true })).join('')}</div>`).join('')
+      ${groups.length ? groups.map((g) => `<div class="card"><div class="row mb"><span class="cat-dot" style="background:${g.c.color}"></span><h2>${g.c.emoji} ${esc(g.c.name)}</h2><span class="muted small">${g.items.length}</span></div>${g.items.map((t) => taskItemHtml(t, 'group')).join('')}</div>`).join('')
         : `<div class="card"><div class="empty"><div class="big">${listFilter === 'open' ? '🎈' : '📭'}</div>${listFilter === 'open' ? 'Ingen åpne oppgaver her. Trykk + for å legge til.' : 'Ingen ferdige oppgaver ennå.'}</div></div>`}
       ${listFilter === 'done' && doneCount ? `<button class="btn ghost block" data-act="clearDone">Rydd bort ferdige oppgaver</button>` : ''}`;
   }
@@ -509,6 +511,7 @@
     const isNew = !t;
     const task = t || { title: '', cat: S.cats()[0].id, due: '', energy: 'medium', today: '', steps: [], notes: '', trigger: '', prio: 2, ...(prefill || {}) };
     const today = S.ymd();
+    const more = !!(task.due || task.trigger || task.notes || (isNew && task.steps.length) || (task.energy && task.energy !== 'medium'));
     return `
       ${modalHead(isNew ? 'Ny oppgave' : 'Oppgave', isNew ? '' : `<button class="btn sm ghost" data-act="deleteTask" data-id="${task.id}" aria-label="Slett">🗑️</button>`)}
       <form data-form="saveTask" data-id="${task.id || ''}">
@@ -517,16 +520,20 @@
         <label class="field"><span>Kategori</span><select class="input" name="cat" data-change="catExamples">${catOptions(task.cat)}</select></label>
         <div class="tiny muted">Forslag (fyller inn tittel og standardsteg):</div>
         ${exampleChips(task.cat)}
-        <div class="grid2 mt">
-          <label class="field"><span>Krever</span><select class="input" name="energy"><option value="low" ${task.energy === 'low' ? 'selected' : ''}>🟢 lite energi</option><option value="medium" ${task.energy === 'medium' ? 'selected' : ''}>🟡 middels</option><option value="high" ${task.energy === 'high' ? 'selected' : ''}>🔴 mye energi</option></select></label>
-          <div><label class="row small" style="margin-top:22px"><input type="checkbox" name="today" ${task.today === today ? 'checked' : ''}> Legg i dagens plan</label>
-          <label class="row small"><input type="checkbox" name="star" ${task.prio === 1 ? 'checked' : ''}> ★ En av dagens viktigste</label></div>
+        <div class="chips mt mb">
+          <label class="chip"><input type="checkbox" name="today" hidden ${task.today === today ? 'checked' : ''}>📅 Legg i dagens plan</label>
+          <label class="chip"><input type="checkbox" name="star" hidden ${task.prio === 1 ? 'checked' : ''}>★ En av dagens viktigste</label>
         </div>
-        <label class="field"><span>Frist (valgfritt)</span>${dateField('due', task.due, dateChips(true))}</label>
-        <label class="field"><span>Kobling (valgfritt): «Etter at jeg …»</span><input class="input" name="trigger" value="${esc(task.trigger || '')}" placeholder="f.eks. har spist frokost" autocomplete="off"></label>
-        ${isNew ? `<label class="field"><span>Steg (ett per linje, valgfritt)</span><textarea class="input" name="stepsText" placeholder="Finne fram…&#10;Gjøre første del…">${esc((task.steps || []).map((s) => s.title || s).join('\n'))}</textarea></label>` : ''}
-        <label class="field"><span>Notat</span><textarea class="input" name="notes" style="min-height:56px">${esc(task.notes || '')}</textarea></label>
-        <div class="row wrap">
+        <details class="more" ${more ? 'open' : ''}><summary>Flere valg</summary>
+          <div class="grid2">
+            <label class="field"><span>Krever</span><select class="input" name="energy"><option value="low" ${task.energy === 'low' ? 'selected' : ''}>🟢 lite energi</option><option value="medium" ${task.energy === 'medium' ? 'selected' : ''}>🟡 middels</option><option value="high" ${task.energy === 'high' ? 'selected' : ''}>🔴 mye energi</option></select></label>
+            <label class="field"><span>Kobling: «Etter at jeg …»</span><input class="input" name="trigger" value="${esc(task.trigger || '')}" placeholder="f.eks. har spist frokost" autocomplete="off"></label>
+          </div>
+          <label class="field"><span>Frist (valgfritt)</span>${dateField('due', task.due, dateChips(true))}</label>
+          ${isNew ? `<label class="field"><span>Steg (ett per linje, valgfritt)</span><textarea class="input" name="stepsText" placeholder="Finne fram…&#10;Gjøre første del…">${esc((task.steps || []).map((s) => s.title || s).join('\n'))}</textarea></label>` : ''}
+          <label class="field"><span>Notat</span><textarea class="input" name="notes" style="min-height:56px">${esc(task.notes || '')}</textarea></label>
+        </details>
+        <div class="row wrap mt">
           <button class="btn primary" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button>
           <button class="btn outline" type="button" data-act="aiBreakDown" data-id="${task.id || ''}">✨ Bryt ned i steg</button>
           ${isNew ? '' : `<button class="btn outline" type="button" data-act="focusTask" data-id="${task.id}">▶ Fokus</button>`}
@@ -551,6 +558,7 @@
   function eventModal(ev, date, tpl) {
     const isNew = !ev;
     const e = ev || (tpl ? S.makeEventFromTemplate(tpl, date || selectedDate) : { title: '', cat: S.cats()[0].id, date: date || selectedDate, time: nextQuarter(), duration: 30, recur: { type: 'none', days: [], until: '' }, steps: [], notes: '', trigger: '' });
+    const more = !!((e.recur && e.recur.type !== 'none') || (e.steps && e.steps.length) || e.notes || e.trigger);
     return `
       ${modalHead(isNew ? 'Ny aktivitet' : 'Aktivitet', isNew ? '' : `<button class="btn sm ghost" data-act="deleteEventMenu" data-id="${e.id}" data-date="${date || ''}" aria-label="Slett">🗑️</button>`)}
       ${isNew ? `<div class="tiny muted">Maler:</div><div class="chips mb">${S.templates().map((t) => `<button type="button" class="chip small" data-act="applyTemplate" data-id="${t.id}">${S.catById(t.cat).emoji} ${esc(t.title)}</button>`).join('')}</div>` : ''}
@@ -565,11 +573,13 @@
           <label class="field"><span>Varighet (min)</span><input class="input" type="number" name="duration" min="1" max="720" value="${e.duration}"></label>
         </div>
         ${durationChips()}
-        ${recurFields(e.recur.type, e.recur.days, e.recur.until || '')}
-        <label class="field"><span>Kobling (valgfritt): «Etter at jeg …»</span><input class="input" name="trigger" value="${esc(e.trigger || '')}" placeholder="f.eks. har drukket morgenkaffen" autocomplete="off"></label>
-        <label class="field"><span>Steg / sjekkliste (ett per linje)</span><textarea class="input" name="stepsText">${esc((e.steps || []).map((s) => s.title).join('\n'))}</textarea></label>
-        <label class="field"><span>Notat</span><textarea class="input" name="notes" style="min-height:56px">${esc(e.notes || '')}</textarea></label>
-        <div class="row wrap"><button class="btn primary" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button>${isNew ? '' : `<button class="btn outline" type="button" data-act="focusEvent" data-id="${e.id}" data-date="${date || S.ymd()}">▶ Fokus</button>`}<button class="btn ghost" type="button" data-act="saveAsTpl">Lagre som mal</button></div>
+        <details class="more" ${more ? 'open' : ''}><summary>Flere valg (gjentakelse, sjekkliste, kobling, notat)</summary>
+          ${recurFields(e.recur.type, e.recur.days, e.recur.until || '')}
+          <label class="field"><span>Kobling (valgfritt): «Etter at jeg …»</span><input class="input" name="trigger" value="${esc(e.trigger || '')}" placeholder="f.eks. har drukket morgenkaffen" autocomplete="off"></label>
+          <label class="field"><span>Steg / sjekkliste (ett per linje)</span><textarea class="input" name="stepsText">${esc((e.steps || []).map((s) => s.title).join('\n'))}</textarea></label>
+          <label class="field"><span>Notat</span><textarea class="input" name="notes" style="min-height:56px">${esc(e.notes || '')}</textarea></label>
+        </details>
+        <div class="row wrap mt"><button class="btn primary" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button>${isNew ? '' : `<button class="btn outline" type="button" data-act="focusEvent" data-id="${e.id}" data-date="${date || S.ymd()}">▶ Fokus</button>`}<button class="btn ghost" type="button" data-act="saveAsTpl">Lagre som mal</button></div>
       </form>`;
   }
   function nextQuarter() { const m = Math.ceil((nowMin() + 1) / 15) * 15; return S.minToHm(m % 1440); }
@@ -720,6 +730,14 @@
     const el = document.createElement('div'); el.className = 'toast' + (big ? ' big' : ''); el.textContent = msg;
     $('#toasts').appendChild(el); setTimeout(() => el.remove(), big ? 3500 : 2200);
   }
+  // Angre-melding: feiltrykk skal være billig å rette.
+  function undoToast(msg, undoFn) {
+    $$('.toast.undo').forEach((t) => t.remove());
+    const el = document.createElement('div'); el.className = 'toast big undo';
+    el.innerHTML = `<span>${esc(msg)}</span><button type="button">Angre</button>`;
+    el.querySelector('button').onclick = () => { el.remove(); undoFn(); render(); toast('Angret'); };
+    $('#toasts').appendChild(el); setTimeout(() => el.remove(), 6000);
+  }
   function confetti() {
     const box = document.createElement('div'); box.className = 'confetti';
     const colors = S.cats().map((c) => c.color);
@@ -773,14 +791,43 @@
 
     // I dag
     setEnergy: (d) => { const today = S.ymd(); S.setEnergy(today, S.energyOn(today) === d.v ? '' : d.v); render(); },
-    toggleStar: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return; S.updateTask(d.id, { prio: t.prio === 1 ? 2 : 1 }); render(); },
-    postpone: (d) => { S.updateTask(d.id, { today: '', due: S.addDays(S.ymd(), 1), plannedTime: '', plannedDuration: 0 }); toast('Flyttet til i morgen. Helt greit 💙'); render(); },
+    toggleStar: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return; S.updateTask(d.id, { prio: t.prio === 1 ? 2 : 1 }); closeModal(); render(); toast(t.prio === 1 ? '★ Markert som viktigst' : 'Fjernet fra viktigst'); },
+    postpone: (d) => {
+      const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return;
+      const prior = { today: t.today, due: t.due, plannedTime: t.plannedTime || '', plannedDuration: t.plannedDuration || 0 };
+      S.updateTask(d.id, { today: '', due: S.addDays(S.ymd(), 1), plannedTime: '', plannedDuration: 0 }); closeModal(); render();
+      undoToast('Flyttet til i morgen. Helt greit 💙', () => S.updateTask(d.id, prior));
+    },
+    taskMenu: (d) => {
+      const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return;
+      const today = S.ymd();
+      const onToday = t.today === today || (t.due && t.due <= today);
+      const items = [
+        ['▶', 'Start fokus', 'focusTask'],
+        [t.prio === 1 ? '☆' : '★', t.prio === 1 ? 'Fjern fra dagens viktigste' : 'Marker som en av dagens viktigste', 'toggleStar'],
+        onToday ? ['🕒', t.plannedTime ? `Endre klokkeslett (${t.plannedTime})` : 'Sett klokkeslett i dag', 'scheduleTask'] : ['📅', 'Legg i dagens plan', 'addToday'],
+        ['⏭', 'Utsett til i morgen', 'postpone'],
+        ['✎', 'Rediger', 'openTask']
+      ];
+      openModal(`${modalHead(esc(t.title))}<div class="menu">
+        ${items.map(([i, l, a]) => `<button class="btn outline" data-act="${a}" data-id="${t.id}"><span style="width:22px;text-align:center">${i}</span>${l}</button>`).join('')}
+        <button class="btn danger" data-act="deleteTask" data-id="${t.id}"><span style="width:22px;text-align:center">🗑</span>Slett</button>
+      </div>`);
+    },
 
     // Oppgaver
-    toggleTask: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); const news = S.toggleTask(d.id); celebrate(news, t && t.done ? S.POINTS.task : 0); render(); if ($('#modal').innerHTML) closeModal(); },
+    toggleTask: (d) => {
+      const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return;
+      const news = S.toggleTask(d.id); if ($('#modal').innerHTML) closeModal(); render();
+      if (t.done) { celebrate(news, 0); vibrate(30); undoToast(`Fullført · +${S.POINTS.task} ⭐`, () => S.toggleTask(d.id)); }
+    },
     openTask: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); if (t) openModal(taskModal(t)); },
-    deleteTask: (d) => { if (confirm('Slette oppgaven?')) { S.deleteTask(d.id); closeModal(); render(); } },
-    addToday: (d) => { S.updateTask(d.id, { today: S.ymd() }); toast('Lagt i dagens plan 📅'); render(); },
+    deleteTask: (d) => {
+      const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return;
+      const idx = S.state.tasks.indexOf(t); S.deleteTask(d.id); closeModal(); render();
+      undoToast(`Slettet «${t.title.slice(0, 30)}»`, () => S.restoreTask(t, idx));
+    },
+    addToday: (d) => { S.updateTask(d.id, { today: S.ymd() }); closeModal(); toast('Lagt i dagens plan 📅'); render(); },
     scheduleTask: (d) => {
       const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return;
       openModal(`${modalHead(`Når vil du gjøre «${esc(t.title)}»?`)}
@@ -802,7 +849,11 @@
       const f = el.closest('form');
       f.title.value = x.title;
       if (f.cat && f.cat.value !== c.id) f.cat.value = c.id;
-      if (f.stepsText) { f.stepsText.value = x.steps.join('\n'); toast(x.steps.length ? `Fylte inn ${x.steps.length} steg` : 'Tittel fylt inn'); return; }
+      if (f.stepsText) {
+        f.stepsText.value = x.steps.join('\n');
+        const det = f.querySelector('details.more'); if (det && x.steps.length) det.open = true;
+        toast(x.steps.length ? `Fylte inn ${x.steps.length} steg` : 'Tittel fylt inn'); return;
+      }
       const t = S.state.tasks.find((z) => z.id === f.dataset.id); if (!t) return;
       if (x.steps.length && (!t.steps.length || confirm('Erstatte stegene på oppgaven med standardstegene for dette forslaget?'))) {
         S.updateTask(t.id, { title: x.title, cat: c.id, steps: x.steps.map((title) => ({ id: S.uid(), title, done: false })) });
@@ -831,6 +882,7 @@
       $$('#weekdays button').forEach((b) => b.classList.toggle('on', (t.days || []).includes(+b.dataset.day)));
       $('#weekdays').hidden = f.recur.value !== 'weekly'; $('#untilField').hidden = f.recur.value === 'none';
       $('#examples').outerHTML = exampleChips(t.cat);
+      const det = f.querySelector('details.more'); if (det && (f.recur.value !== 'none' || (t.steps || []).length)) det.open = true;
       toast('Mal fylt inn');
     },
     saveAsTpl: (d, el) => {
@@ -841,17 +893,25 @@
       toast('Lagret som mal ✔', true);
     },
     openEvent: (d) => { const e = S.state.events.find((x) => x.id === d.id); if (e) openModal(eventModal(e, d.date)); },
-    toggleOcc: (d) => { const e = S.state.events.find((x) => x.id === d.id); const news = S.toggleOccurrence(d.id, d.date); celebrate(news, e && e.done[d.date] ? S.POINTS.event : 0); render(); },
+    toggleOcc: (d) => {
+      const e = S.state.events.find((x) => x.id === d.id); if (!e) return;
+      const news = S.toggleOccurrence(d.id, d.date); render();
+      if (e.done[d.date]) { celebrate(news, 0); vibrate(30); undoToast(`Fullført · +${S.POINTS.event} ⭐`, () => S.toggleOccurrence(d.id, d.date)); }
+    },
     deleteEventMenu: (d) => {
       const e = S.state.events.find((x) => x.id === d.id); if (!e) return;
-      if (e.recur.type === 'none' || !d.date) { if (confirm('Slette aktiviteten?')) { S.deleteEvent(d.id); closeModal(); render(); } return; }
+      if (e.recur.type === 'none' || !d.date) { actions.deleteEvent(d); return; }
       openModal(`<h2 class="mb">Slette «${esc(e.title)}»?</h2><p class="small muted">Dette er en gjentakende aktivitet.</p>
         <button class="btn block outline mb" data-act="skipOcc" data-id="${e.id}" data-date="${d.date}">Bare ${d2(d.date).toLowerCase()}</button>
         <button class="btn danger block mb" data-act="deleteEvent" data-id="${e.id}">Hele serien</button>
         <button class="btn ghost block" data-act="closeModal">Avbryt</button>`);
     },
-    skipOcc: (d) => { S.skipOccurrence(d.id, d.date); closeModal(); render(); },
-    deleteEvent: (d) => { S.deleteEvent(d.id); closeModal(); render(); },
+    skipOcc: (d) => { S.skipOccurrence(d.id, d.date); closeModal(); render(); undoToast(`Fjernet for ${d2(d.date).toLowerCase()}`, () => S.unskipOccurrence(d.id, d.date)); },
+    deleteEvent: (d) => {
+      const e = S.state.events.find((x) => x.id === d.id); if (!e) return;
+      const idx = S.state.events.indexOf(e); S.deleteEvent(d.id); closeModal(); render();
+      undoToast(`Slettet «${e.title.slice(0, 30)}»`, () => S.restoreEvent(e, idx));
+    },
     week: (d) => { selectedDate = S.addDays(selectedDate, 7 * +d.n); render(); },
     goToday: () => { selectedDate = S.ymd(); render(); },
     selDate: (d) => { selectedDate = d.date; render(); },
