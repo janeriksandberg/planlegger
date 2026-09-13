@@ -256,6 +256,12 @@ label.field > span { display: block; font-size: .78rem; font-weight: 600; color:
 /* Statistikk */
 .energy { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .quick .input { min-height: 46px; }
+.quick-tag { border: none; background: transparent; color: var(--muted); font-size: .84rem; padding: 6px 2px; text-align: left; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; }
+.quick-tag b { color: var(--text); font-weight: 600; }
+.quick-tag::after { content: '▾'; opacity: .6; }
+.modal .actions { position: sticky; bottom: -18px; background: var(--surface); padding: 12px 0; margin: 8px 0 -18px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 8px; z-index: 2; }
+.field-label { display: block; font-size: .78rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+.steps-note { font-size: .8rem; color: var(--success); font-weight: 600; }
 .quick select.input { font-size: 1rem; }
 .swipe-hint { display: none; padding-top: 8px; }
 @media (hover: none) and (pointer: coarse) { .swipe-hint { display: block; } }

@@ -76,7 +76,7 @@
       </div></div>`;
   }
 
-  const APP_VERSION = '10';
+  const APP_VERSION = '11';
 
   // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
   function setupServiceWorker() {
@@ -97,7 +97,9 @@
     renderShell();
     render();
     setupServiceWorker();
-    setInterval(() => { checkReminders(); if (view === 'today' && !$('#modal').innerHTML) render(); }, 60000);
+    // Minuttoppdatering av I dag, men aldri mens noe skrives (ellers mistes teksten).
+    const typing = () => (document.activeElement && document.activeElement.closest('form')) || ($('[data-input="quickTitle"]') || {}).value;
+    setInterval(() => { checkReminders(); if (view === 'today' && !$('#modal').innerHTML && !typing()) render(); }, 60000);
     checkReminders();
   }
 
@@ -146,9 +148,17 @@
     return shortDate(due);
   }
   function catOptions(sel) { return S.cats().map((c) => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.emoji} ${esc(c.name)}</option>`).join(''); }
-  // Kategorichips (rullbar rad). `act` er handlingen som kjøres ved trykk.
-  function catChipsHtml(sel, act) {
-    return `<div class="chips scroll cat-chips">${S.cats().map((x) => `<button type="button" class="chip ${x.id === sel ? 'active' : ''}" data-act="${act}" data-v="${x.id}" style="${x.id === sel ? `border-color:${x.color};color:${x.color};background:${x.color}1a` : ''}">${x.emoji} ${esc(x.name)}</button>`).join('')}</div>`;
+  // Kategorier sortert etter bruk (mest brukt først), «Annet» alltid sist.
+  function catsByUsage() {
+    const n = {};
+    S.state.tasks.forEach((t) => { n[t.cat] = (n[t.cat] || 0) + 1; });
+    S.state.events.forEach((e) => { n[e.cat] = (n[e.cat] || 0) + 1; });
+    const cats = S.cats();
+    return [...cats].sort((a, b) => (a.id === 'annet') - (b.id === 'annet') || (n[b.id] || 0) - (n[a.id] || 0) || cats.indexOf(a) - cats.indexOf(b));
+  }
+  // Kategorichips. `wrap` = bryt over flere linjer (skjema), ellers rullbar rad (I dag).
+  function catChipsHtml(sel, act, wrap) {
+    return `<div class="chips ${wrap ? '' : 'scroll'} cat-chips">${catsByUsage().map((x) => `<button type="button" class="chip ${x.id === sel ? 'active' : ''}" data-act="${act}" data-v="${x.id}" style="${x.id === sel ? `border-color:${x.color};color:${x.color};background:${x.color}1a` : ''}">${x.emoji} ${esc(x.name)}</button>`).join('')}</div>`;
   }
   // Oppdaterer chips + skjult felt + forslag i et skjema uten å tegne alt på nytt.
   function syncFormCat(f, id) {
@@ -369,29 +379,31 @@
       ${doneToday.length ? `<details class="card"><summary>Fullført i dag (${doneToday.length}) 🎉</summary>${doneToday.map((t) => taskItemHtml(t)).join('')}</details>` : ''}`;
   }
 
-  // Hurtiglegg-til: velg kategori → trykk på et forslag (legges rett inn med steg), eller skriv fritt.
-  function quickCatId() {
-    const cats = S.cats(); const last = S.state.settings.lastCat;
-    return cats.some((c) => c.id === last) ? last : cats[0].id;
+  // Hurtiglegg-til: skriv fritt (merkelappen viser hvor det havner), eller trykk på en kategori for forslag.
+  let quickOpenCat = null;   // kategori med åpne forslag (null = skjult)
+  let quickTextCat = null;   // manuelt valgt kategori for fritekst (null = automatisk)
+  function quickTagText(title) {
+    const x = S.findExample(title);
+    const c = S.catById(quickTextCat || (x ? x.cat : S.defaultCatId()));
+    return `→ <b>${c.emoji} ${esc(c.name)}</b>${x && x.steps.length ? ` · ${x.steps.length} steg` : ''}`;
   }
   function quickAddHtml() {
-    const catId = quickCatId(); const c = S.catById(catId);
+    const open = quickOpenCat && S.cats().some((c) => c.id === quickOpenCat) ? quickOpenCat : null;
+    const c = open ? S.catById(open) : null;
     const today = S.ymd();
     const existing = new Set(S.state.tasks.filter((t) => !t.done && t.today === today).map((t) => t.title.toLowerCase()));
-    const annet = S.catById(S.defaultCatId());
     return `<form data-form="quickAdd" class="quick mb">
       <div class="row">
-        <input class="input grow" name="title" placeholder="Skriv fritt (havner under ${esc(annet.name)}) …" autocomplete="off">
+        <input class="input grow" name="title" placeholder="Ny oppgave for i dag…" autocomplete="off" autocapitalize="sentences" enterkeyhint="done" data-input="quickTitle">
         <button class="btn primary icon" type="submit" aria-label="Legg til">${ICONS.plus}</button>
       </div>
-      <input type="hidden" name="cat" value="${catId}">
-      <div class="tiny muted" style="margin-top:8px">Eller velg kategori og trykk på et forslag:</div>
-      ${catChipsHtml(catId, 'quickCat')}
-      <div class="chips" style="margin-top:2px">${c.examples.length
+      <button type="button" class="quick-tag" id="quickTag" data-act="quickTag" title="Velg hvor oppgaven skal havne">${quickTagText('')}</button>
+      ${catChipsHtml(open, 'quickCat', false)}
+      ${c ? `<div class="chips" style="margin-top:2px">${c.examples.length
         ? c.examples.map((x, i) => existing.has(x.title.toLowerCase())
           ? `<span class="chip small" style="opacity:.45" title="Ligger allerede i dag">✓ ${esc(x.title)}</span>`
-          : `<button type="button" class="chip small" data-act="quickExample" data-cat="${c.id}" data-i="${i}">+ ${esc(x.title)}${x.steps.length ? ` <span class="muted">·${x.steps.length}</span>` : ''}</button>`).join('')
-        : `<span class="tiny muted">Ingen forslag i ${esc(c.name)} ennå. Legg til under Mer → Kategorier.</span>`}</div>
+          : `<button type="button" class="chip small" data-act="quickExample" data-cat="${c.id}" data-i="${i}" title="${x.steps.length ? x.steps.length + ' steg' : ''}">${x.steps.length ? '☰ ' : ''}${esc(x.title)}</button>`).join('')
+        : `<span class="tiny muted">Ingen forslag i ${esc(c.name)} ennå. Legg til under Mer → Kategorier.</span>`}</div>` : ''}
     </form>`;
   }
 
@@ -597,7 +609,12 @@
   }
 
   // ---------- Modaler ----------
-  function openModal(html) { $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModalBg"><div class="modal">${html}</div></div>`; revealActiveChips(); }
+  let modalDirty = false; // noe er skrevet i skjemaet – vern mot å miste det ved feiltrykk
+  function openModal(html) { $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModalBg"><div class="modal">${html}</div></div>`; modalDirty = false; revealActiveChips(); }
+  function tryCloseModal() {
+    if (modalDirty && $('#modal form') && !confirm('Lukke uten å lagre det du har skrevet?')) return;
+    closeModal();
+  }
   // Ruller valgt kategori inn i synsfeltet i rullbare chip-rader.
   function revealActiveChips() {
     $$('.cat-chips').forEach((row) => { const a = row.querySelector('.chip.active'); if (a) row.scrollLeft = a.offsetLeft - row.clientWidth / 2 + a.offsetWidth / 2; });
@@ -615,10 +632,10 @@
       <form data-form="saveTask" data-id="${task.id || ''}">
         ${prefill && prefill.inboxId ? `<input type="hidden" name="inboxId" value="${prefill.inboxId}">` : ''}
         <input type="hidden" name="cat" value="${task.cat}">
-        <div class="field"><span style="display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:5px">1. Kategori</span>${catChipsHtml(task.cat, 'formCat')}</div>
+        <div class="field"><span class="field-label">1. Kategori</span>${catChipsHtml(task.cat, 'formCat', true)}</div>
         <div class="tiny muted">Forslag (fyller inn navn og standardsteg):</div>
         ${exampleChips(task.cat)}
-        <label class="field mt"><span>2. Hva skal gjøres?</span><input class="input" name="title" value="${esc(task.title)}" required autocomplete="off" placeholder="Skriv selv, eller velg et forslag over"></label>
+        <label class="field mt"><span>2. Hva skal gjøres? <span class="steps-note" id="stepsNote"></span></span><input class="input" name="title" value="${esc(task.title)}" required autocomplete="off" autocapitalize="sentences" placeholder="Skriv selv, eller velg et forslag over"></label>
         <div class="chips mb">
           <label class="chip"><input type="checkbox" name="today" hidden ${task.today === today ? 'checked' : ''}>📅 Legg i dagens plan</label>
           <label class="chip"><input type="checkbox" name="star" hidden ${task.prio === 1 ? 'checked' : ''}>★ En av dagens viktigste</label>
@@ -632,7 +649,7 @@
           ${isNew ? `<label class="field"><span>Steg (ett per linje, valgfritt)</span><textarea class="input" name="stepsText" placeholder="Finne fram…&#10;Gjøre første del…">${esc((task.steps || []).map((s) => s.title || s).join('\n'))}</textarea></label>` : ''}
           <label class="field"><span>Notat</span><textarea class="input" name="notes" style="min-height:56px">${esc(task.notes || '')}</textarea></label>
         </details>
-        <div class="row wrap mt">
+        <div class="actions">
           <button class="btn primary" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button>
           <button class="btn outline" type="button" data-act="aiBreakDown" data-id="${task.id || ''}">✨ Bryt ned i steg</button>
           ${isNew ? '' : `<button class="btn outline" type="button" data-act="focusTask" data-id="${task.id}">▶ Fokus</button>`}
@@ -659,14 +676,13 @@
     const e = ev || (tpl ? S.makeEventFromTemplate(tpl, date || selectedDate) : { title: '', cat: S.defaultCatId(), date: date || selectedDate, time: nextQuarter(), duration: 30, recur: { type: 'none', days: [], until: '' }, steps: [], notes: '', trigger: '' });
     const more = !!((e.recur && e.recur.type !== 'none') || (e.steps && e.steps.length) || e.notes || e.trigger);
     return `
-      ${modalHead(isNew ? 'Ny aktivitet' : 'Aktivitet', isNew ? '' : `<button class="btn sm ghost" data-act="deleteEventMenu" data-id="${e.id}" data-date="${date || ''}" aria-label="Slett">🗑️</button>`)}
-      ${isNew ? `<div class="tiny muted">Maler:</div><div class="chips mb">${S.templates().map((t) => `<button type="button" class="chip small" data-act="applyTemplate" data-id="${t.id}">${S.catById(t.cat).emoji} ${esc(t.title)}</button>`).join('')}</div>` : ''}
+      ${modalHead(isNew ? (tpl ? `Ny aktivitet · ${esc(tpl.title)}` : 'Ny aktivitet') : 'Aktivitet', isNew ? `<button class="btn sm outline" data-act="tplSheet">📋 Bruk mal</button>` : `<button class="btn sm ghost" data-act="deleteEventMenu" data-id="${e.id}" data-date="${date || ''}" aria-label="Slett">🗑️</button>`)}
       <form data-form="saveEvent" data-id="${e.id || ''}">
         <input type="hidden" name="cat" value="${e.cat}">
-        <div class="field"><span style="display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:5px">Kategori</span>${catChipsHtml(e.cat, 'formCat')}</div>
+        <div class="field"><span class="field-label">1. Kategori</span>${catChipsHtml(e.cat, 'formCat', true)}</div>
         <div class="tiny muted">Forslag (fyller inn navn og sjekkliste):</div>
         ${exampleChips(e.cat)}
-        <label class="field mt"><span>Aktivitet</span><input class="input" name="title" value="${esc(e.title)}" required autocomplete="off" placeholder="Skriv selv, eller velg et forslag over"></label>
+        <label class="field mt"><span>2. Aktivitet <span class="steps-note" id="stepsNote">${tpl && tpl.steps.length ? tpl.steps.length + ' steg fra malen' : ''}</span></span><input class="input" name="title" value="${esc(e.title)}" required autocomplete="off" autocapitalize="sentences" placeholder="Skriv selv, eller velg et forslag over"></label>
         <label class="field"><span>Dato</span>${dateField('date', e.date, dateChips(false))}</label>
         <div class="grid2">
           <label class="field"><span>Klokkeslett (tt:mm)</span>${timeField('time', e.time, true)}</label>
@@ -679,7 +695,7 @@
           <label class="field"><span>Steg / sjekkliste (ett per linje)</span><textarea class="input" name="stepsText">${esc((e.steps || []).map((s) => s.title).join('\n'))}</textarea></label>
           <label class="field"><span>Notat</span><textarea class="input" name="notes" style="min-height:56px">${esc(e.notes || '')}</textarea></label>
         </details>
-        <div class="row wrap mt"><button class="btn primary" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button>${isNew ? '' : `<button class="btn outline" type="button" data-act="focusEvent" data-id="${e.id}" data-date="${date || S.ymd()}">▶ Fokus</button>`}<button class="btn ghost" type="button" data-act="saveAsTpl">Lagre som mal</button></div>
+        <div class="actions"><button class="btn primary" type="submit">${isNew ? 'Legg til' : 'Lagre'}</button>${isNew ? '' : `<button class="btn outline" type="button" data-act="focusEvent" data-id="${e.id}" data-date="${date || S.ymd()}">▶ Fokus</button>`}<button class="btn ghost" type="button" data-act="saveAsTpl">Lagre som mal</button></div>
       </form>`;
   }
   function nextQuarter() { const m = Math.ceil((nowMin() + 1) / 15) * 15; return S.minToHm(m % 1440); }
@@ -871,9 +887,16 @@
   const actions = {
     nav: (d) => { view = d.view; if (d.view === 'today') planDate = S.ymd(); render(); window.scrollTo(0, 0); },
     planDay: (d) => { planDate = +d.n === 0 ? S.ymd() : S.addDays(planDate, +d.n); render(); },
-    fab: () => { if (view === 'plan') openModal(eventModal(null, selectedDate)); else openModal(taskModal(null)); },
-    closeModalBg: (d, el, e) => { if (e.target === el) closeModal(); },
-    closeModal: () => closeModal(),
+    fab: () => { if (view === 'plan') openModal(eventModal(null, selectedDate)); else openModal(taskModal(null, { today: view === 'today' ? S.ymd() : '' })); },
+    closeModalBg: (d, el, e) => { if (e.target === el) tryCloseModal(); },
+    closeModal: () => tryCloseModal(),
+    tplSheet: () => {
+      const date = view === 'plan' ? selectedDate : planDate;
+      openModal(`${modalHead('Velg mal')}<div class="menu">
+        ${S.templates().map((t) => `<button class="btn outline" data-act="newEventTpl" data-id="${t.id}" data-date="${date}"><span style="width:22px;text-align:center">${S.catById(t.cat).emoji}</span><span class="grow" style="text-align:left">${esc(t.title)}<div class="tiny muted">kl. ${t.time} · ${t.duration} min${t.recur && t.recur !== 'none' ? ' · ' + S.recurLabel({ type: t.recur, days: t.days }) : ''}</div></span></button>`).join('') || '<div class="empty">Ingen maler ennå. Lag en under Mer → Maler.</div>'}
+        <button class="btn ghost" data-act="newEvent">Uten mal</button>
+      </div>`);
+    },
     retryLogin: () => { S.lockDevice(); renderLogin(); },
     wipeAll: () => { if (confirm('Slette alle data på denne enheten? Dette kan ikke angres.')) { S.wipe(); location.reload(); } },
     lock: () => { if (confirm('Låse enheten? Du må skrive inn passordet neste gang.')) { S.lockDevice(); location.reload(); } },
@@ -895,16 +918,30 @@
 
     // I dag
     quickCat: (d, el) => {
-      S.state.settings.lastCat = d.v; S.save();
+      quickOpenCat = quickOpenCat === d.v ? null : d.v;
       const typed = el.closest('form').title.value;
       render();
-      const inp = $('form[data-form="quickAdd"] input[name="title"]'); if (inp && typed) inp.value = typed;
+      const inp = $('form[data-form="quickAdd"] input[name="title"]'); if (inp && typed) { inp.value = typed; $('#quickTag').innerHTML = quickTagText(typed); }
     },
     quickExample: (d) => {
       const c = S.catById(d.cat); const x = c.examples[+d.i]; if (!x) return;
       const t = S.addTask({ title: x.title, cat: c.id, today: S.ymd(), steps: x.steps.map((title) => ({ id: S.uid(), title, done: false })) });
-      S.state.settings.lastCat = c.id; S.save(); render();
+      render();
       undoToast(`Lagt til: ${x.title}${x.steps.length ? ` (${x.steps.length} steg)` : ''}`, () => S.deleteTask(t.id));
+    },
+    quickTag: (d, el) => {
+      const typed = el.closest('form').title.value;
+      openModal(`${modalHead('Hvor skal oppgaven havne?')}<div class="menu">
+        <button class="btn outline" data-act="quickTextCat" data-v=""><span style="width:22px;text-align:center">✨</span>Automatisk (treff på forslag, ellers ${esc(S.catById(S.defaultCatId()).name)})</button>
+        ${catsByUsage().map((c) => `<button class="btn outline" data-act="quickTextCat" data-v="${c.id}" style="${quickTextCat === c.id ? `border-color:${c.color}` : ''}"><span style="width:22px;text-align:center">${c.emoji}</span>${esc(c.name)}</button>`).join('')}
+      </div>`);
+      $('#modal').dataset.typed = typed;
+    },
+    quickTextCat: (d) => {
+      quickTextCat = d.v || null;
+      const typed = $('#modal').dataset.typed || '';
+      closeModal(); render();
+      const inp = $('form[data-form="quickAdd"] input[name="title"]'); if (inp) { inp.value = typed; $('#quickTag').innerHTML = quickTagText(typed); inp.focus(); }
     },
     setEnergy: (d) => { const today = S.ymd(); S.setEnergy(today, S.energyOn(today) === d.v ? '' : d.v); render(); },
     toggleStar: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return; S.updateTask(d.id, { prio: t.prio === 1 ? 2 : 1 }); closeModal(); render(); toast(t.prio === 1 ? '★ Markert som viktigst' : 'Fjernet fra viktigst'); },
@@ -968,8 +1005,8 @@
       if (f.cat && f.cat.value !== c.id) syncFormCat(f, c.id);
       if (f.stepsText) {
         f.stepsText.value = x.steps.join('\n');
-        const det = f.querySelector('details.more'); if (det && x.steps.length) det.open = true;
-        toast(x.steps.length ? `Fylte inn ${x.steps.length} steg` : 'Tittel fylt inn'); return;
+        const note = $('#stepsNote', f); if (note) note.textContent = x.steps.length ? `${x.steps.length} steg lagt til` : '';
+        modalDirty = true; return;
       }
       const t = S.state.tasks.find((z) => z.id === f.dataset.id); if (!t) return;
       if (x.steps.length && (!t.steps.length || confirm('Erstatte stegene på oppgaven med standardstegene for dette forslaget?'))) {
@@ -992,7 +1029,7 @@
 
     // Aktiviteter
     newEvent: () => openModal(eventModal(null, view === 'plan' ? selectedDate : planDate)),
-    newEventTpl: (d) => { const t = S.templates().find((x) => x.id === d.id); if (t) openModal(eventModal(null, selectedDate, t)); },
+    newEventTpl: (d) => { const t = S.templates().find((x) => x.id === d.id); if (t) openModal(eventModal(null, d.date || (view === 'plan' ? selectedDate : planDate), t)); },
     applyTemplate: (d, el) => {
       const t = S.templates().find((x) => x.id === d.id); if (!t) return; const f = el.closest('.modal').querySelector('form');
       f.title.value = t.title; f.time.value = t.time; f.duration.value = t.duration; f.recur.value = t.recur || 'none'; f.stepsText.value = (t.steps || []).join('\n');
@@ -1156,13 +1193,13 @@
     },
     quickAdd: (f) => {
       const d = readForm(f); if (!d.title.trim()) return;
-      // Fritekst havner under «Annet» med mindre teksten matcher et forslag; da brukes forslagets kategori.
-      const x = S.findExample(d.title, d.cat);
-      const cat = x ? x.cat : S.defaultCatId();
+      // Manuelt valg vinner. Ellers: treff på et forslag gir forslagets kategori, og fritekst havner under «Annet».
+      const x = S.findExample(d.title);
+      const cat = quickTextCat || (x ? x.cat : S.defaultCatId());
       const t = S.addTask({ title: d.title.trim(), cat, today: S.ymd(), steps: x ? x.steps.map((title) => ({ id: S.uid(), title, done: false })) : [] });
-      render();
+      quickTextCat = null; render();
       const cname = S.catById(cat).name;
-      undoToast(x ? `Lagt til under ${cname} med ${x.steps.length} steg` : `Lagt til under ${cname}. Endre kategori via ⋯ → Rediger.`, () => S.deleteTask(t.id));
+      undoToast(x ? `Lagt til under ${cname} med ${x.steps.length} steg` : `Lagt til under ${cname}`, () => S.deleteTask(t.id));
       const inp = $('form[data-form="quickAdd"] input'); if (inp) inp.focus();
     },
     inboxAdd: (f) => {
@@ -1266,7 +1303,11 @@
       file.text().then((t) => S.importJson(t)).then(() => { toast('Importert ✔', true); render(); }).catch((err) => toast('Import feilet: ' + err.message, true));
     }
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if ($('#modal').innerHTML) closeModal(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if ($('#modal').innerHTML) tryCloseModal(); } });
+  document.addEventListener('input', (e) => {
+    if (e.target.closest('#modal form')) modalDirty = true;
+    if (e.target.matches('[data-input="quickTitle"]')) { const tag = $('#quickTag'); if (tag) tag.innerHTML = quickTagText(e.target.value); }
+  });
 
   // Sveip sidelengs på elementer med data-swipe for å bla mellom dager.
   let swipe = null;
