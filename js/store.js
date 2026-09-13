@@ -139,15 +139,7 @@ window.PLStore = (() => {
       version: 2,
       categories: cloneCats(),
       templates,
-      tasks: [
-        { id: uid(), title: 'Bli kjent med appen', cat: 'egentid', today, due: today, energy: 'low', prio: 1, done: false, created: Date.now(), notes: 'Du får poeng for hvert steg. Slett meg når du er ferdig.',
-          steps: [
-            { id: uid(), title: 'Huk av dette steget', done: false },
-            { id: uid(), title: 'Legg til en egen oppgave under «Lister»', done: false },
-            { id: uid(), title: 'Legg inn en aktivitet i «Plan»', done: false },
-            { id: uid(), title: 'Start en aktivitet i fokusmodus', done: false }
-          ] }
-      ],
+      tasks: [],
       events: [
         makeEventFromTemplate(templates[0], today),
         makeEventFromTemplate(templates[1], today),
@@ -156,7 +148,7 @@ window.PLStore = (() => {
       inbox: [],
       energyLog: {},
       game: { points: 0, streak: 0, bestStreak: 0, lastActive: null, freezes: 1, history: {}, badges: [] },
-      settings: { theme: 'auto', notify: true, dayStart: '06:00', dayEnd: '23:00', dailyGoal: 3, ai: { ...window.PLANLEGGER_CONFIG.ai } }
+      settings: { theme: 'auto', notify: true, calm: false, onboarded: false, dayStart: '06:00', dayEnd: '23:00', dailyGoal: 3, ai: { ...window.PLANLEGGER_CONFIG.ai } }
     };
   }
 

@@ -186,8 +186,31 @@
     return [...occ, ...tasks].sort((a, b) => a.start - b.start);
   }
 
+  const fmtDur = (m) => (m >= 60 ? `${Math.floor(m / 60)} t${m % 60 ? ' ' + (m % 60) + ' min' : ''}` : `${m} min`);
+
+  // Proporsjonal dagslinje: gjør dagens form og «hvor er jeg nå» synlig på ett blikk.
+  function dayBarHtml(entries, date) {
+    const st = S.state.settings;
+    const s = S.minutesOf(st.dayStart), e = Math.max(S.minutesOf(st.dayEnd), s + 60);
+    const span = e - s;
+    const pct = (m) => Math.max(0, Math.min(100, ((m - s) / span) * 100));
+    const nm = nowMin();
+    const isToday = date === S.ymd();
+    const blocks = entries.filter((en) => en.end > s && en.start < e).map((en) => `<i class="${en.done ? 'done' : ''}" style="left:${pct(en.start)}%;width:${Math.max(pct(en.end) - pct(en.start), 0.8)}%;background:${S.catById(en.cat).color}" title="${S.minToHm(en.start)} ${esc(en.title)}"></i>`).join('');
+    const now = isToday && nm >= s && nm <= e ? `<span class="now" style="left:${pct(nm)}%"></span>` : '';
+    return `<div class="daybar">${blocks}${now}</div><div class="daybar-labels"><span>${st.dayStart}</span>${isToday ? `<span class="n">nå ${S.hm()}</span>` : '<span></span>'}<span>${st.dayEnd}</span></div>`;
+  }
+
   function entryHtml(e, showNow) {
     const c = S.catById(e.cat);
+    if (e.done) {
+      const toggleAct = e.kind === 'event' ? 'toggleOcc' : 'toggleTask';
+      return `<div class="item done compact" style="--c:${c.color}">
+        <div class="time-col">${S.minToHm(e.start)}</div>
+        <button class="check on" data-act="${toggleAct}" data-id="${e.id}" data-date="${e.date}" aria-label="Angre fullført">✓</button>
+        <div class="grow title" data-act="${e.kind === 'event' ? 'openEvent' : 'openTask'}" data-id="${e.id}" data-date="${e.date}" style="cursor:pointer">${c.emoji} ${esc(e.title)}</div>
+      </div>`;
+    }
     const sd = e.steps.filter(e.isStepDone).length;
     const meta = [`${e.duration} min`];
     if (e.steps.length) meta.push(`${sd}/${e.steps.length} steg`);
@@ -261,10 +284,10 @@
         <div class="row"><button class="btn light" data-act="${current.kind === 'event' ? 'focusEvent' : 'focusTask'}" data-id="${current.id}" data-date="${today}">▶ Fokus</button>
         <button class="btn" data-act="${current.kind === 'event' ? 'toggleOcc' : 'toggleTask'}" data-id="${current.id}" data-date="${today}">✓ Ferdig</button></div>
       </div>`;
-    } else if (next) {
+    } else if (next && (next.start - nm <= 60 || !openTasks.length)) {
       const diff = next.start - nm;
       nowCard = `<div class="card now-card">
-        <div class="eyebrow">Neste · om ${diff < 60 ? diff + ' min' : Math.floor(diff / 60) + ' t ' + (diff % 60) + ' min'} (kl. ${S.minToHm(next.start)})</div>
+        <div class="eyebrow">Neste · om ${fmtDur(diff)} (kl. ${S.minToHm(next.start)})</div>
         <h2>${esc(next.title)}</h2>
         <div class="row"><button class="btn light" data-act="${next.kind === 'event' ? 'focusEvent' : 'focusTask'}" data-id="${next.id}" data-date="${today}">▶ Start nå</button>
         ${openTasks.length ? `<button class="btn" data-act="focusTask" data-id="${openTasks[0].id}">Eller: ${esc(openTasks[0].title.slice(0, 24))}${openTasks[0].title.length > 24 ? '…' : ''}</button>` : ''}</div>
@@ -272,10 +295,11 @@
     } else if (openTasks.length) {
       const t = openTasks[0];
       nowCard = `<div class="card now-card">
-        <div class="eyebrow">Forslag · én ting om gangen${dayE ? ' · tilpasset ' + { low: 'lav', medium: 'middels', high: 'høy' }[dayE] + ' energi' : ''}</div>
+        <div class="eyebrow">${t.prio === 1 ? 'Dagens viktigste' : 'Forslag'} · én ting om gangen${dayE ? ' · ' + { low: 'lav', medium: 'middels', high: 'høy' }[dayE] + ' energi' : ''}</div>
         <h2>${esc(t.title)}</h2>
-        <div class="row"><button class="btn light" data-act="focusTask" data-id="${t.id}">▶ Start 25 min</button>
+        <div class="row"><button class="btn light" data-act="focusTask" data-id="${t.id}">▶ Start ${t.plannedDuration || 25} min</button>
         <button class="btn" data-act="toggleTask" data-id="${t.id}">✓ Ferdig</button></div>
+        ${next ? `<p class="small" style="opacity:.85;margin:10px 0 0">Neste i planen: kl. ${S.minToHm(next.start)} ${esc(next.title)} (om ${fmtDur(next.start - nm)})</p>` : ''}
       </div>`;
     } else {
       nowCard = `<div class="card now-card"><h2>${todayCount ? 'Alt er gjort. Nyt resten av dagen 🌿' : 'Ingenting planlagt akkurat nå'}</h2>
@@ -290,9 +314,10 @@
         ${[['low', 'Lav'], ['medium', 'Middels'], ['high', 'Høy']].map(([v, l]) => `<button class="chip small ${dayE === v ? 'active' : ''}" data-act="setEnergy" data-v="${v}">${l}</button>`).join('')}
         ${dayE ? '<span class="tiny muted">Forslagene tilpasses</span>' : ''}
       </div>
+      ${onboardingHtml()}
       <div class="section-title"><h2>Dagens plan</h2><button class="btn sm ghost" data-act="nav" data-view="plan">Uke →</button></div>
       <div class="card">
-        ${entries.length ? timelineHtml(entries, today) : `<div class="empty"><div class="big">🌤️</div>Ingen aktiviteter i dag ennå.<div class="mt"><button class="btn sm outline" data-act="newEvent">+ Legg til aktivitet</button></div></div>`}
+        ${entries.length ? dayBarHtml(entries, today) + timelineHtml(entries, today) : `<div class="empty"><div class="big">🌤️</div>Ingen aktiviteter i dag ennå.<div class="mt"><button class="btn sm outline" data-act="newEvent">+ Legg til aktivitet</button></div></div>`}
       </div>
       <div class="section-title"><h2>Oppgaver i dag${starred ? ` · ${starred} viktigst` : ''}</h2><div class="row"><button class="btn sm ghost" data-act="pickTasks">Hent fra lister</button>${openTasks.length > 1 ? `<button class="btn sm ghost" data-act="aiPlanDay">✨ Planlegg</button>` : ''}</div></div>
       <div class="card">
@@ -306,23 +331,28 @@
         ${openTasks.length > 5 ? `<p class="tiny muted">${openTasks.length} oppgaver i dag er mye. Marker 1–3 som viktigst, og utsett resten uten dårlig samvittighet (⋯-menyen).</p>` : ''}
         ${openTasks.length ? openTasks.map((t) => taskItemHtml(t, 'today')).join('') : `<div class="empty small">Ingen løse oppgaver. ${todayCount ? 'Bra jobba!' : 'Legg til én liten ting.'}</div>`}
       </div>
-      ${doneToday.length ? `<details class="card"><summary>Fullført i dag (${doneToday.length}) 🎉</summary>${doneToday.map((t) => taskItemHtml(t)).join('')}</details>` : ''}
-      <div class="card flat small muted">💡 ${tip()}</div>`;
+      ${doneToday.length ? `<details class="card"><summary>Fullført i dag (${doneToday.length}) 🎉</summary>${doneToday.map((t) => taskItemHtml(t)).join('')}</details>` : ''}`;
   }
 
-  const TIPS = [
-    'Start med det letteste. Fremdrift gir mer energi enn planlegging.',
-    'Bruk fokusmodus og en kort timer. Du trenger ikke bli ferdig, bare begynne.',
-    'Bryt store oppgaver ned til steg på under 10 minutter.',
-    'Legg oppgaver inn med klokkeslett. Det er lettere å gjøre ting som har en plass i dagen.',
-    'Streaks er en bonus, ikke et krav. En dårlig dag nullstiller ikke deg.',
-    'Planlegg morgendagen i kveld, så slipper hjernen å bestemme i morgen tidlig.',
-    'Én ting om gangen. Alt annet kan vente i lista.',
-    'Koble nye vaner til noe du allerede gjør: «etter at jeg har pusset tenner, legger jeg fram klær».',
-    'Skriv ned tanker i innboksen med én gang, så slipper hodet å holde på dem.',
-    'Sjekk hvor lang tid ting faktisk tok. Det gjør neste plan mer realistisk.'
-  ];
-  const tip = () => TIPS[S.parseYmd(S.ymd()).getDate() % TIPS.length];
+  // Tre små steg første gang. Hukes av automatisk, forsvinner når alle er gjort eller når brukeren skjuler det.
+  function onboardingHtml() {
+    const st = S.state.settings;
+    if (st.onboarded) return '';
+    const added = S.state.tasks.length > 0;
+    const timed = S.state.tasks.some((t) => t.plannedTime) || S.state.events.length > 3;
+    const done = S.totalDone(S.state.game) > 0;
+    if (added && timed && done) { st.onboarded = true; S.save(); return ''; }
+    const steps = [
+      ['Legg til én ting du skal gjøre i dag', added, `<button class="btn sm outline" data-act="fab">+ Legg til</button>`],
+      ['Gi den et klokkeslett (⋯ → Sett klokkeslett)', timed, ''],
+      ['Trykk ▶ for å starte, og huk av når du er ferdig', done, '']
+    ];
+    return `<div class="card onboard">
+      <div class="row between"><h2>Kom i gang</h2><button class="btn sm ghost" data-act="dismissOnboarding">Skjul</button></div>
+      <p class="small muted">Du trenger ikke planlegge alt. Tre små steg holder.</p>
+      ${steps.map(([label, on, extra], i) => `<div class="step ${on ? 'on' : ''}"><span class="num">${on ? '✓' : i + 1}</span><span class="grow">${label}</span>${on ? '' : extra}</div>`).join('')}
+    </div>`;
+  }
 
   // ---------- Lister ----------
   function renderLists() {
@@ -372,9 +402,9 @@
         const cats = [...new Set(dayEntries(d).map((e) => S.catById(e.cat).color))].slice(0, 4);
         return `<button class="${d === selectedDate ? 'sel' : ''} ${d === today ? 'today' : ''}" data-act="selDate" data-date="${d}"><span class="d">${DAY_NAMES[S.isoDow(d)]}</span><span class="n">${S.parseYmd(d).getDate()}</span><span class="dots">${cats.map((c) => `<i style="background:${c}"></i>`).join('')}</span></button>`;
       }).join('')}</div>
-      <div class="section-title"><h2>${d2(selectedDate)}</h2><span class="small muted">${entries.length ? Math.round(total / 6) / 10 + ' t planlagt' : ''}</span></div>
+      <div class="section-title"><h2>${d2(selectedDate)}</h2><span class="small muted">${entries.length ? fmtDur(total) + ' planlagt' : ''}</span></div>
       <div class="card">
-        ${entries.length ? timelineHtml(entries, selectedDate) : `<div class="empty"><div class="big">📭</div>Ingenting planlagt.<div class="mt"><button class="btn sm outline" data-act="newEvent">+ Legg til aktivitet</button></div></div>`}
+        ${entries.length ? dayBarHtml(entries, selectedDate) + timelineHtml(entries, selectedDate) : `<div class="empty"><div class="big">📭</div>Ingenting planlagt.<div class="mt"><button class="btn sm outline" data-act="newEvent">+ Legg til aktivitet</button></div></div>`}
       </div>
       ${dueTasks.length ? `<div class="section-title"><h2>Oppgaver med frist</h2></div><div class="card">${dueTasks.map((t) => taskItemHtml(t)).join('')}</div>` : ''}
       <div class="section-title"><h2>Maler</h2><button class="btn sm ghost" data-act="editTpl">+ Ny mal</button></div>
@@ -448,6 +478,7 @@
             <label class="field"><span>Dagen slutter (tt:mm)</span>${timeField('dayEnd', '')}</label>
           </div>
           <label class="row small mb"><input type="checkbox" name="notify"> Påminnelser 5 min før aktiviteter (når appen er åpen)</label>
+          <label class="row small mb"><input type="checkbox" name="calm"> Rolig modus: ingen konfetti, lyd eller vibrasjon</label>
           <div class="row wrap"><button class="btn primary" type="submit">Lagre</button><button class="btn outline" type="button" data-act="askNotify">Tillat varsler</button><span class="small muted">${'Notification' in window ? 'Status: ' + ({ granted: 'tillatt', denied: 'blokkert', default: 'ikke spurt' }[Notification.permission]) : 'Ikke støttet'}</span></div>
         </form>
       </div>
@@ -499,7 +530,7 @@
     const fa = $('form[data-form="saveAi"]'); const fs = $('form[data-form="saveSettings"]');
     if (!fa || !fs) return;
     fa.provider.value = st.ai.provider; fa.baseUrl.value = st.ai.baseUrl || ''; fa.model.value = st.ai.model || ''; fa.apiKey.value = st.ai.apiKey || '';
-    fs.theme.value = st.theme; fs.dailyGoal.value = st.dailyGoal; fs.dayStart.value = st.dayStart; fs.dayEnd.value = st.dayEnd; fs.notify.checked = !!st.notify;
+    fs.theme.value = st.theme; fs.dailyGoal.value = st.dailyGoal; fs.dayStart.value = st.dayStart; fs.dayEnd.value = st.dayEnd; fs.notify.checked = !!st.notify; fs.calm.checked = !!st.calm;
   }
 
   // ---------- Modaler ----------
@@ -683,6 +714,7 @@
       <div style="width:100%;max-width:480px" class="mt">
         <button class="btn block outline" data-act="aiKickstart">✨ Hjelp meg i gang</button>
         <div id="fAi" class="mt">${focus.ai ? `<div class="ai-box">${esc(focus.ai)}</div>` : ''}</div>
+        <button class="btn block ghost mt muted" data-act="focusSkip">Ikke i dag – flytt til i morgen</button>
       </div>
     </div>`;
     tickFocus();
@@ -702,12 +734,13 @@
     }
   }
   function beep() {
+    if (S.state && S.state.settings.calm) return;
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       [0, .25, .5].forEach((t) => { const o = ctx.createOscillator(); const g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.value = 880; g.gain.value = .15; o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + .18); });
     } catch (e) { /* ignorer */ }
   }
-  const vibrate = (p) => { if (navigator.vibrate) navigator.vibrate(p); };
+  const vibrate = (p) => { if (navigator.vibrate && !(S.state && S.state.settings.calm)) navigator.vibrate(p); };
 
   // ---------- Varsler, feiring ----------
   function notify(title, body) {
@@ -739,6 +772,7 @@
     $('#toasts').appendChild(el); setTimeout(() => el.remove(), 6000);
   }
   function confetti() {
+    if (S.state && S.state.settings.calm) return;
     const box = document.createElement('div'); box.className = 'confetti';
     const colors = S.cats().map((c) => c.color);
     for (let i = 0; i < 70; i++) { const p = document.createElement('i'); p.style.left = Math.random() * 100 + 'vw'; p.style.background = colors[i % colors.length]; p.style.animationDelay = Math.random() * .6 + 's'; p.style.animationDuration = 1.4 + Math.random() + 's'; box.appendChild(p); }
@@ -932,6 +966,12 @@
     focusTask: (d) => startFocus('task', d.id, S.ymd()),
     focusEvent: (d) => startFocus('event', d.id, d.date || S.ymd()),
     exitFocus: () => { focus = null; renderFocus(); render(); },
+    focusSkip: () => {
+      const f = focus; focus = null; renderFocus();
+      if (f.kind === 'task') actions.postpone({ id: f.id });
+      else { const nextDate = S.addDays(f.date, 1); actions.skipOcc({ id: f.id, date: f.date }); toast(`Neste gang: ${d2(nextDate).toLowerCase()} 💙`); }
+    },
+    dismissOnboarding: () => { S.state.settings.onboarded = true; S.save(); render(); },
     focusDur: (d) => { focus.planned = +d.v; focus.total = focus.remaining = +d.v * 60; renderFocus(); },
     focusToggle: () => {
       if (focus.running) { focus.running = false; focus.remaining = Math.max(0, Math.round((focus.endAt - Date.now()) / 1000)); }
@@ -1097,7 +1137,7 @@
       const d = readForm(f);
       const dayStart = readTime(d.dayStart, 'starttid'); if (dayStart === null) return;
       const dayEnd = readTime(d.dayEnd, 'sluttid'); if (dayEnd === null) return;
-      Object.assign(S.state.settings, { theme: d.theme, dailyGoal: Math.max(1, +d.dailyGoal || 3), dayStart, dayEnd, notify: !!d.notify });
+      Object.assign(S.state.settings, { theme: d.theme, dailyGoal: Math.max(1, +d.dailyGoal || 3), dayStart, dayEnd, notify: !!d.notify, calm: !!d.calm });
       applyTheme(d.theme); S.save(); toast('Lagret'); render();
     },
     changePw: async (f) => {
