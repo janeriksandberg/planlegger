@@ -1,5 +1,5 @@
 // Service worker: nettverk først, cache som reserve (fungerer offline etter første besøk).
-const CACHE = 'planlegger-v3';
+const CACHE = 'planlegger-v4';
 const ASSETS = ['./', './index.html', './css/style.css', './js/config.js', './js/crypto.js', './js/store.js', './js/ai.js', './js/app.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-maskable.svg'];
 
 self.addEventListener('install', (e) => {

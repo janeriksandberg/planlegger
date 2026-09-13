@@ -21,7 +21,7 @@ window.PLStore = (() => {
       ex('Levere oppgave', ['Les gjennom én gang', 'Sjekk krav og filformat', 'Last opp og lever', 'Sjekk at leveringen er registrert']),
       ex('Rydde skrivebordet', ['Fjern kopper og søppel', 'Legg papirer i én bunke', 'Tørk av'])
     ] },
-    { id: 'helse', name: 'Helse', emoji: '💊', color: '#ef4444', examples: [
+    { id: 'helse', name: 'Helse', emoji: '🩺', color: '#ef4444', examples: [
       ex('Ta medisin', ['Finn fram medisinen', 'Ta den med et glass vann', 'Huk av her']),
       ex('Drikke et glass vann', ['Fyll et glass', 'Drikk det opp']),
       ex('Gå en tur 20 min', ['Ta på sko og jakke', 'Gå ut døra', 'Gå 10 min én vei', 'Snu og gå hjem']),
@@ -61,6 +61,13 @@ window.PLStore = (() => {
       ex('Kjøpe gave', ['Bestem budsjett', 'Velg 1–2 ideer', 'Kjøp', 'Pakk inn']),
       ex('Til apoteket', ['Sjekk hva du trenger', 'Ta med legitimasjon', 'Dra']),
       ex('Fylle bensin', ['Sjekk nivået', 'Kjør til stasjonen', 'Fyll og betal'])
+    ] },
+    { id: 'dyr',     name: 'Dyr',             emoji: '🐾', color: '#f97316', examples: [
+      ex('Mate hunden', ['Finne fram fôret', 'Fylle skåla', 'Bytte vann']),
+      ex('Lufte hunden', ['Finne bånd og poser', 'Gå ut', 'Gå minst 15 min']),
+      ex('Bytte kattesand', ['Finne fram pose og ny sand', 'Tømme kassen', 'Fylle på ny sand', 'Kaste posen']),
+      ex('Kjøpe dyremat', ['Sjekke hva som er tomt', 'Skrive på handlelista', 'Kjøpe']),
+      ex('Bestille veterinærtime', ['Finne nummeret', 'Ha kalenderen klar', 'Ringe', 'Legge timen i planen'])
     ] }
   ];
   const CATEGORY_COLORS = ['#f59e0b', '#3b82f6', '#ef4444', '#22c55e', '#a855f7', '#64748b', '#14b8a6', '#ec4899', '#f97316', '#06b6d4', '#84cc16', '#8b5cf6'];
@@ -263,6 +270,15 @@ window.PLStore = (() => {
     state.categories.forEach((c) => { c.examples = (c.examples || []).map((e) => (typeof e === 'string' ? { title: e, steps: [] } : { title: e.title, steps: e.steps || [] })); });
     // Fyll inn standardsteg for eksempler som mangler dem (fra v1)
     state.categories.forEach((c) => { const def = DEFAULT_CATEGORIES.find((x) => x.id === c.id); if (!def) return; c.examples.forEach((e) => { if (!e.steps.length) { const de = def.examples.find((x) => x.title === e.title); if (de) e.steps = [...de.steps]; } }); });
+    // Ikonoppdateringer og ny standardkategori «Dyr» for eksisterende data
+    state.categories.forEach((c) => {
+      if (c.id === 'helse' && c.emoji === '💊') c.emoji = '🩺';
+      if (/^dyr$/i.test((c.name || '').trim()) && (c.emoji === '📁' || !c.emoji)) c.emoji = '🐾';
+    });
+    if (!state.categories.some((c) => c.id === 'dyr' || /^dyr$/i.test((c.name || '').trim()))) {
+      const dyr = cloneCats().find((c) => c.id === 'dyr');
+      if (dyr) state.categories.push(dyr);
+    }
     if (!Array.isArray(state.templates)) state.templates = cloneTemplates();
     state.events.forEach((e) => { e.done = e.done || {}; e.skipped = e.skipped || {}; e.stepDone = e.stepDone || {}; e.steps = e.steps || []; e.recur = e.recur || { type: 'none', days: [], until: '' }; });
     state.tasks.forEach((t) => { t.steps = t.steps || []; });
