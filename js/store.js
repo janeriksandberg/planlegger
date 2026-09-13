@@ -179,7 +179,7 @@ window.PLStore = (() => {
   }
   function updateCategory(id, patch) { const c = state.categories.find((x) => x.id === id); if (c) Object.assign(c, patch); save(); return c; }
   function deleteCategory(id) {
-    if (state.categories.length <= 1) return false;
+    if (state.categories.length <= 1 || id === 'annet') return false;
     const fallback = state.categories.find((c) => c.id !== id).id;
     state.tasks.forEach((t) => { if (t.cat === id) t.cat = fallback; });
     state.events.forEach((e) => { if (e.cat === id) e.cat = fallback; });
@@ -315,7 +315,12 @@ window.PLStore = (() => {
     await save(true);
   }
 
-  function exportJson() { return JSON.stringify(state, null, 2); }
+  // Sikkerhetskopien er ukryptert, så AI-nøkkelen utelates. Ved import beholdes nøkkelen som allerede er på enheten.
+  function exportJson() {
+    const copy = JSON.parse(JSON.stringify(state));
+    if (copy.settings && copy.settings.ai) copy.settings.ai.apiKey = '';
+    return JSON.stringify(copy, null, 2);
+  }
 
   // Kalenderfil (.ics) med aktiviteter og gjentakelse, slik at telefonens kalender kan varsle selv når appen er lukket.
   function exportIcs() {
@@ -361,13 +366,35 @@ window.PLStore = (() => {
       if (t.done) return;
       const past = [t.today, t.due, t.plannedDate].filter((d) => d && d < today).sort();
       if (!past.length) return;
-      t.setFor = past[past.length - 1]; t.leftover = true;
-      t.today = ''; t.due = ''; t.plannedTime = ''; t.plannedDate = ''; t.plannedDuration = 0; changed++;
+      // Nullstill bare det som er passert. En frist fram i tid beholdes, og da er oppgaven fortsatt planlagt.
+      if (t.today && t.today < today) t.today = '';
+      if (t.plannedDate && t.plannedDate < today) { t.plannedDate = ''; t.plannedTime = ''; t.plannedDuration = 0; }
+      if (t.due && t.due < today) t.due = '';
+      t.setFor = past[past.length - 1];
+      t.leftover = !t.due && !t.plannedDate;
+      changed++;
+    });
+    // Engangsaktiviteter som ikke ble huket av, samles også i morgenkortet.
+    state.events.forEach((e) => {
+      if ((e.recur || {}).type !== 'none' || e.leftover === true) return;
+      // leftoverFor hindrer at samme passerte dato spørres om på nytt etter «Skjul»; flyttes den og passerer igjen, spørres det igjen.
+      if (e.date < today && !e.done[e.date] && !e.skipped[e.date] && e.leftoverFor !== e.date) { e.leftover = true; e.leftoverFor = e.date; changed++; }
     });
     if (changed) save();
     return changed;
   }
   const leftovers = () => state.tasks.filter((t) => !t.done && t.leftover);
+  const leftoverEvents = () => state.events.filter((e) => e.leftover === true);
+
+  // Beholder id-ene (og dermed dagens avhukinger) på steg hvis tittelen fortsatt finnes.
+  function mergeSteps(oldSteps, titles) {
+    const pool = [...(oldSteps || [])];
+    return titles.map((title) => {
+      const i = pool.findIndex((s) => s.title === title);
+      if (i >= 0) return pool.splice(i, 1)[0];
+      return { id: uid(), title, done: false };
+    });
+  }
 
   // --- Innboks (tankefanger) og energi ---
   function addInbox(text) { const n = { id: uid(), text: text.trim(), created: Date.now() }; state.inbox.unshift(n); save(); return n; }
@@ -377,7 +404,10 @@ window.PLStore = (() => {
   async function importJson(text) {
     const obj = JSON.parse(text);
     if (!obj || !Array.isArray(obj.tasks) || !Array.isArray(obj.events)) throw new Error('Ugyldig fil');
-    state = obj; migrate(); await save(true);
+    const keepKey = state && state.settings && state.settings.ai ? state.settings.ai.apiKey : '';
+    state = obj; migrate();
+    if (!state.settings.ai.apiKey && keepKey) state.settings.ai.apiKey = keepKey;
+    await save(true);
   }
 
   // --- Gjentakelse ---
@@ -440,7 +470,12 @@ window.PLStore = (() => {
     g.points = Math.max(0, g.points + sign * POINTS[kind]);
     if (kind === 'step') return news;
     g.history[today] = Math.max(0, (g.history[today] || 0) + sign);
+    // Angres dagens eneste fullføring, rulles streak og aktiv dag tilbake til slik det var før.
+    if (sign < 0 && g.history[today] === 0 && g.lastActive === today && g.beforeToday) {
+      Object.assign(g, g.beforeToday); delete g.beforeToday; return news;
+    }
     if (sign > 0 && g.lastActive !== today) {
+      g.beforeToday = { streak: g.streak, lastActive: g.lastActive, bestStreak: g.bestStreak, freezes: g.freezes };
       if (g.lastActive) {
         const gap = Math.round((parseYmd(today) - parseYmd(g.lastActive)) / 864e5);
         if (gap === 1) g.streak += 1;
@@ -477,7 +512,7 @@ window.PLStore = (() => {
     s.done = !s.done; const news = award('step', s.done ? 1 : -1); save(); return news;
   }
   function addEvent(data) {
-    const e = { id: uid(), title: '', cat: state.categories[0].id, date: ymd(), time: '09:00', duration: 30, recur: { type: 'none', days: [], until: '' }, steps: [], done: {}, skipped: {}, stepDone: {}, notes: '', ...data };
+    const e = { id: uid(), title: '', cat: state.categories[0].id, date: ymd(), time: '09:00', duration: 30, recur: { type: 'none', days: [], until: '' }, steps: [], done: {}, skipped: {}, stepDone: {}, notes: '', created: Date.now(), ...data };
     state.events.push(e); save(); return e;
   }
   function updateEvent(id, patch) { const e = state.events.find((x) => x.id === id); if (e) Object.assign(e, patch); save(); return e; }
@@ -504,7 +539,7 @@ window.PLStore = (() => {
     get state() { return state; },
     onChange: (fn) => listeners.add(fn),
     hasDeviceKey, hasData, unlockWithPassword, unlockWithDevice, lockDevice, wipe, rekey, changePassword, save, exportJson, exportIcs, importJson,
-    addInbox, deleteInbox, setEnergy, energyOn, taskDate, rollover, leftovers,
+    addInbox, deleteInbox, setEnergy, energyOn, taskDate, rollover, leftovers, leftoverEvents, mergeSteps,
     occursOn, occurrencesOn, recurLabel, levelOf, totalDone,
     addTask, updateTask, deleteTask, restoreTask, toggleTask, toggleStep,
     addEvent, updateEvent, deleteEvent, restoreEvent, skipOccurrence, unskipOccurrence, toggleOccurrence, toggleEventStep
