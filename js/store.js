@@ -285,7 +285,7 @@ window.PLStore = (() => {
     if (!state.categories.some((c) => c.id === 'annet')) state.categories.push({ id: 'annet', name: 'Annet', emoji: '📌', color: '#94a3b8', examples: [] });
     if (!Array.isArray(state.templates)) state.templates = cloneTemplates();
     state.events.forEach((e) => { e.done = e.done || {}; e.skipped = e.skipped || {}; e.stepDone = e.stepDone || {}; e.steps = e.steps || []; e.recur = e.recur || { type: 'none', days: [], until: '' }; });
-    state.tasks.forEach((t) => { t.steps = t.steps || []; });
+    state.tasks.forEach((t) => { t.steps = t.steps || []; if (t.plannedTime && !t.plannedDate) t.plannedDate = t.today || t.due || ''; });
     // v1 telte steg som fullførte i historikken; regn om til faktiske fullføringer.
     if ((state.version || 1) < 2) {
       const hist = {};
@@ -349,8 +349,9 @@ window.PLStore = (() => {
     return lines.join('\r\n');
   }
 
-  // Dagen en oppgave hører til i kalenderen: dagens plan hvis den er lagt der, ellers fristen.
-  const taskDate = (t) => t.today || t.due || '';
+  // Dagen klokkeslettet gjelder i kalenderen. plannedDate settes eksplisitt når tid velges (dato i skjemaet,
+  // eller «i dag» via Sett klokkeslett i dag). Reserve for eldre data: dagens plan, ellers fristen.
+  const taskDate = (t) => t.plannedDate || t.today || t.due || '';
 
   // --- Innboks (tankefanger) og energi ---
   function addInbox(text) { const n = { id: uid(), text: text.trim(), created: Date.now() }; state.inbox.unshift(n); save(); return n; }

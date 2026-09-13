@@ -76,7 +76,7 @@
       </div></div>`;
   }
 
-  const APP_VERSION = '16';
+  const APP_VERSION = '17';
 
   // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
   function setupServiceWorker() {
@@ -998,8 +998,8 @@
     toggleStar: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return; S.updateTask(d.id, { prio: t.prio === 1 ? 2 : 1 }); closeModal(); render(); toast(t.prio === 1 ? '★ Markert som viktigst' : 'Fjernet fra viktigst'); },
     postpone: (d) => {
       const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return;
-      const prior = { today: t.today, due: t.due, plannedTime: t.plannedTime || '', plannedDuration: t.plannedDuration || 0 };
-      S.updateTask(d.id, { today: '', due: S.addDays(S.ymd(), 1), plannedTime: '', plannedDuration: 0 }); closeModal(); render();
+      const prior = { today: t.today, due: t.due, plannedTime: t.plannedTime || '', plannedDate: t.plannedDate || '', plannedDuration: t.plannedDuration || 0 };
+      S.updateTask(d.id, { today: '', due: S.addDays(S.ymd(), 1), plannedTime: '', plannedDate: '', plannedDuration: 0 }); closeModal(); render();
       undoToast('Flyttet til i morgen. Helt greit 💙', () => S.updateTask(d.id, prior));
     },
     taskMenu: (d) => {
@@ -1042,7 +1042,7 @@
           <div class="row"><button class="btn primary" type="submit">Legg i tidslinjen</button>${t.plannedTime ? `<button class="btn outline" type="button" data-act="unscheduleTask" data-id="${t.id}">Fjern tidspunkt</button>` : ''}</div>
         </form>`);
     },
-    unscheduleTask: (d) => { S.updateTask(d.id, { plannedTime: '', plannedDuration: 0 }); closeModal(); render(); },
+    unscheduleTask: (d) => { S.updateTask(d.id, { plannedTime: '', plannedDate: '', plannedDuration: 0 }); closeModal(); render(); },
     toggleStep: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); const s = t && t.steps.find((x) => x.id === d.step); const news = S.toggleStep(d.id, d.step); celebrate(news, s && s.done ? S.POINTS.step : 0); openModal(taskModal(t)); render(); },
     deleteStep: (d) => { const t = S.state.tasks.find((x) => x.id === d.id); if (!t) return; S.updateTask(d.id, { steps: t.steps.filter((s) => s.id !== d.step) }); openModal(taskModal(t)); },
     clearDone: () => askSheet('Fjerne alle ferdige oppgaver fra lista? Poengene beholdes.', 'Rydd bort', () => { S.state.tasks = S.state.tasks.filter((t) => !t.done); S.save(); render(); }, true),
@@ -1205,7 +1205,7 @@
     },
     applyPlan: () => {
       const rows = JSON.parse($('#modal').dataset.plan || '[]'); const today = S.ymd();
-      rows.forEach((p) => S.updateTask(p.id, { today, plannedTime: p.time, plannedDuration: p.duration }));
+      rows.forEach((p) => S.updateTask(p.id, { today, plannedDate: today, plannedTime: p.time, plannedDuration: p.duration }));
       closeModal(); render(); toast('Planen er lagt inn i tidslinjen 📅', true);
     },
     testAi: async (d, el) => {
@@ -1266,7 +1266,9 @@
       const due = readDate(d.due, 'frist'); if (due === null) return;
       const plannedTime = (d.plannedTime || '').trim() ? readTime(d.plannedTime, 'klokkeslett') : '';
       if (plannedTime === null) return;
-      const patch = { title: d.title.trim(), cat: d.cat, due, energy: d.energy, notes: d.notes, trigger: (d.trigger || '').trim(), prio: d.star ? 1 : 2, today: d.today ? today : '', plannedTime, plannedDuration: plannedTime ? Math.max(5, +d.plannedDuration || 25) : 0 };
+      // Klokkeslettet gjelder datoen i skjemaet. Uten dato: i dag hvis «Legg i dagens plan» er valgt, ellers ingen kalenderplass.
+      const plannedDate = plannedTime ? (due || (d.today ? today : '')) : '';
+      const patch = { title: d.title.trim(), cat: d.cat, due, energy: d.energy, notes: d.notes, trigger: (d.trigger || '').trim(), prio: d.star ? 1 : 2, today: d.today ? today : '', plannedTime, plannedDate, plannedDuration: plannedTime ? Math.max(5, +d.plannedDuration || 25) : 0 };
       if (f.dataset.id) {
         S.updateTask(f.dataset.id, patch);
       } else {
@@ -1283,7 +1285,7 @@
     },
     scheduleTask: (f) => {
       const d = readForm(f); const time = readTime(d.time, 'klokkeslett'); if (time === null) return;
-      S.updateTask(f.dataset.id, { today: S.ymd(), plannedTime: time, plannedDuration: +d.duration || 25 }); closeModal(); render(); toast('Lagt i tidslinjen 🕒');
+      S.updateTask(f.dataset.id, { today: S.ymd(), plannedDate: S.ymd(), plannedTime: time, plannedDuration: +d.duration || 25 }); closeModal(); render(); toast('Lagt i tidslinjen 🕒');
     },
     saveEvent: (f) => {
       const d = readForm(f);
