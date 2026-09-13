@@ -109,15 +109,16 @@ Foreslå små, tydelige første steg (2–10 minutter). Vær oppmuntrende uten �
     const first = steps && steps.length ? steps[0] : 'den aller minste delen';
     return `${pick(['Sett timer på 2 minutter', 'Bare 2 minutter', 'Prøv 2 minutter'])} og gjør kun dette: ${first}. Du trenger ikke fortsette etterpå. ${pick(['Å begynne er hele jobben.', 'Det trenger ikke bli bra, bare gjort.', 'Kroppen først, motivasjonen kommer etter.', 'Ett steg. Det er alt.'])}`;
   }
-  function localPlanDay(tasks, occurrences, dayEnd) {
+  function localPlanDay(tasks, occurrences, dayEnd, dayEnergy) {
     const S = PLStore;
     const now = S.minutesOf(S.hm());
     const end = S.minutesOf(dayEnd || '23:00');
     const busy = occurrences.filter((o) => !o.done).map((o) => [o.start, o.end]);
-    const dur = { low: 15, medium: 25, high: 45 };
+    // Lav energi i dag: kortere økter og de letteste først. Høy energi: krevende ting først.
+    const dur = dayEnergy === 'low' ? { low: 10, medium: 15, high: 25 } : { low: 15, medium: 25, high: 45 };
     const rank = { low: 0, medium: 1, high: 2 };
-    const morning = now < 12 * 60;
-    const sorted = [...tasks].sort((a, b) => (morning ? rank[b.energy] - rank[a.energy] : rank[a.energy] - rank[b.energy]));
+    const hardFirst = dayEnergy === 'high' || (dayEnergy !== 'low' && now < 12 * 60);
+    const sorted = [...tasks].sort((a, b) => (b.prio === 1) - (a.prio === 1) || (hardFirst ? rank[b.energy] - rank[a.energy] : rank[a.energy] - rank[b.energy]));
     let t = Math.ceil((now + 5) / 5) * 5;
     const plan = [];
     sorted.forEach((task) => {
@@ -129,7 +130,7 @@ Foreslå små, tydelige første steg (2–10 minutter). Vær oppmuntrende uten �
         t = clash[1] + 5;
       }
       if (t + d > end) return;
-      plan.push({ id: task.id, time: S.minToHm(t), duration: d, why: morning ? 'krevende ting mens energien er høy' : 'lett start gir fremdrift' });
+      plan.push({ id: task.id, time: S.minToHm(t), duration: d, why: task.prio === 1 ? 'en av dagens viktigste' : hardFirst ? 'krevende ting mens energien er høy' : 'lett start gir fremdrift' });
       t += d + 5;
     });
     return plan;
@@ -155,13 +156,14 @@ Foreslå små, tydelige første steg (2–10 minutter). Vær oppmuntrende uten �
     } catch (e) { return { text: localKickstart(title, steps), local: true, error: e.message }; }
   }
 
-  async function planDay(tasks, occurrences, dayEnd) {
-    if (!enabled()) return { plan: localPlanDay(tasks, occurrences, dayEnd), local: true };
+  async function planDay(tasks, occurrences, dayEnd, dayEnergy) {
+    if (!enabled()) return { plan: localPlanDay(tasks, occurrences, dayEnd, dayEnergy), local: true };
     try {
       const now = PLStore.hm();
       const busy = occurrences.filter((o) => !o.done).map((o) => `${o.ev.time}–${PLStore.minToHm(o.end)} ${o.ev.title}`).join('; ') || 'ingen';
-      const list = tasks.map((t) => `${t.id}: ${t.title} (energi: ${t.energy})`).join('\n');
-      const text = await chat([{ role: 'user', content: `Klokka er ${now}. Dagen varer til ${dayEnd}. Opptatt: ${busy}.
+      const list = tasks.map((t) => `${t.id}: ${t.title} (krever: ${t.energy}${t.prio === 1 ? ', VIKTIGST' : ''})`).join('\n');
+      const energyTxt = { low: 'lav', medium: 'middels', high: 'høy' }[dayEnergy] || 'ukjent';
+      const text = await chat([{ role: 'user', content: `Klokka er ${now}. Dagen varer til ${dayEnd}. Energinivået mitt i dag er ${energyTxt}. Opptatt: ${busy}.
 Oppgaver som skal gjøres i dag:
 ${list}
 Lag en realistisk rekkefølge med starttid og varighet i minutter for hver oppgave, med små pauser innimellom og uten å overlappe de opptatte tidene. Start ikke før ${now}. Legg de mest krevende først hvis det er tidlig på dagen, ellers de letteste først. Svar som JSON-liste: [{"id":"…","time":"HH:MM","duration":25,"why":"kort begrunnelse"}].` }], { json: true });
@@ -169,7 +171,7 @@ Lag en realistisk rekkefølge med starttid og varighet i minutter for hver oppga
       const plan = Array.isArray(arr) ? arr : arr.plan || [];
       if (!plan.length) throw new Error('Tomt forslag');
       return { plan, local: false };
-    } catch (e) { return { plan: localPlanDay(tasks, occurrences, dayEnd), local: true, error: e.message }; }
+    } catch (e) { return { plan: localPlanDay(tasks, occurrences, dayEnd, dayEnergy), local: true, error: e.message }; }
   }
 
   return { chat, breakDown, kickstart, planDay, cfg, enabled, PRESETS };

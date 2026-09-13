@@ -146,6 +146,8 @@ window.PLStore = (() => {
         makeEventFromTemplate(templates[1], today),
         makeEventFromTemplate(templates[2], today)
       ],
+      inbox: [],
+      energyLog: {},
       game: { points: 0, streak: 0, bestStreak: 0, lastActive: null, freezes: 1, history: {}, badges: [] },
       settings: { theme: 'auto', notify: true, dayStart: '06:00', dayEnd: '23:00', dailyGoal: 3, ai: { ...window.PLANLEGGER_CONFIG.ai } }
     };
@@ -255,6 +257,8 @@ window.PLStore = (() => {
     state.game = { ...d.game, ...(state.game || {}) };
     state.tasks = state.tasks || [];
     state.events = state.events || [];
+    state.inbox = state.inbox || [];
+    state.energyLog = state.energyLog || {};
     if (!Array.isArray(state.categories) || !state.categories.length) state.categories = cloneCats();
     state.categories.forEach((c) => { c.examples = (c.examples || []).map((e) => (typeof e === 'string' ? { title: e, steps: [] } : { title: e.title, steps: e.steps || [] })); });
     // Fyll inn standardsteg for eksempler som mangler dem (fra v1)
@@ -292,6 +296,37 @@ window.PLStore = (() => {
   }
 
   function exportJson() { return JSON.stringify(state, null, 2); }
+
+  // Kalenderfil (.ics) med aktiviteter og gjentakelse, slik at telefonens kalender kan varsle selv når appen er lukket.
+  function exportIcs() {
+    const dt = (date, time) => date.replace(/-/g, '') + 'T' + time.replace(':', '') + '00';
+    const escT = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+    const BY = ['', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Planlegger//NO', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Planlegger'];
+    state.events.forEach((e) => {
+      let rrule = '';
+      const r = e.recur || { type: 'none' };
+      if (r.type === 'daily') rrule = 'FREQ=DAILY';
+      else if (r.type === 'weekdays') rrule = 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+      else if (r.type === 'weekly') rrule = 'FREQ=WEEKLY;BYDAY=' + (r.days && r.days.length ? r.days : [isoDow(e.date)]).map((d) => BY[d]).join(',');
+      else if (r.type === 'monthly') rrule = 'FREQ=MONTHLY';
+      if (rrule && r.until) rrule += ';UNTIL=' + r.until.replace(/-/g, '') + 'T235959';
+      lines.push('BEGIN:VEVENT', `UID:${e.id}@planlegger`, `DTSTAMP:${dt(ymd(), hm())}`, `DTSTART:${dt(e.date, e.time)}`, `DURATION:PT${e.duration || 30}M`, `SUMMARY:${escT(e.title)}`);
+      if (rrule) lines.push('RRULE:' + rrule);
+      Object.keys(e.skipped || {}).forEach((d) => lines.push(`EXDATE:${dt(d, e.time)}`));
+      const desc = [(e.steps || []).map((s) => '- ' + s.title).join('\n'), e.notes].filter(Boolean).join('\n');
+      if (desc) lines.push(`DESCRIPTION:${escT(desc)}`);
+      lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT5M', `DESCRIPTION:${escT(e.title)}`, 'END:VALARM', 'END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
+    return lines.join('\r\n');
+  }
+
+  // --- Innboks (tankefanger) og energi ---
+  function addInbox(text) { const n = { id: uid(), text: text.trim(), created: Date.now() }; state.inbox.unshift(n); save(); return n; }
+  function deleteInbox(id) { state.inbox = state.inbox.filter((n) => n.id !== id); save(); }
+  function setEnergy(date, level) { if (level) state.energyLog[date] = level; else delete state.energyLog[date]; save(); }
+  const energyOn = (date) => state.energyLog[date] || '';
   async function importJson(text) {
     const obj = JSON.parse(text);
     if (!obj || !Array.isArray(obj.tasks) || !Array.isArray(obj.events)) throw new Error('Ugyldig fil');
@@ -376,7 +411,7 @@ window.PLStore = (() => {
 
   // --- Mutasjoner ---
   function addTask(data) {
-    const t = { id: uid(), title: '', cat: state.categories[0].id, steps: [], done: false, energy: 'medium', prio: 2, due: '', today: '', notes: '', created: Date.now(), ...data };
+    const t = { id: uid(), title: '', cat: state.categories[0].id, steps: [], done: false, energy: 'medium', prio: 2, due: '', today: '', notes: '', trigger: '', created: Date.now(), ...data };
     state.tasks.unshift(t); save(); return t;
   }
   function updateTask(id, patch) { const t = state.tasks.find((x) => x.id === id); if (t) Object.assign(t, patch); save(); return t; }
@@ -418,7 +453,8 @@ window.PLStore = (() => {
     ymd, parseYmd, addDays, isoDow, mondayOf, hm, minutesOf, minToHm, uid, fmtNb, parseNb, parseTime,
     get state() { return state; },
     onChange: (fn) => listeners.add(fn),
-    hasDeviceKey, hasData, unlockWithPassword, unlockWithDevice, lockDevice, wipe, rekey, changePassword, save, exportJson, importJson,
+    hasDeviceKey, hasData, unlockWithPassword, unlockWithDevice, lockDevice, wipe, rekey, changePassword, save, exportJson, exportIcs, importJson,
+    addInbox, deleteInbox, setEnergy, energyOn,
     occursOn, occurrencesOn, recurLabel, levelOf, totalDone,
     addTask, updateTask, deleteTask, toggleTask, toggleStep,
     addEvent, updateEvent, deleteEvent, skipOccurrence, toggleOccurrence, toggleEventStep
