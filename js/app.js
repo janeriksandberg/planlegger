@@ -76,7 +76,7 @@
       </div></div>`;
   }
 
-  const APP_VERSION = '12';
+  const APP_VERSION = '13';
 
   // Registrerer service worker og laster siden på nytt når en ny versjon har tatt over.
   function setupServiceWorker() {
@@ -198,6 +198,7 @@
     const sd = t.steps.filter((s) => s.done).length;
     const meta = [];
     if (t.due) meta.push(dueLabel(t.due));
+    if (t.plannedTime && !t.done) meta.push(`kl. ${t.plannedTime}`);
     if (t.steps.length) meta.push(`${sd}/${t.steps.length} steg`);
     if (t.energy && t.energy !== 'medium') meta.push(energyLabel[t.energy]);
     if (t.trigger) meta.push('⛓ etter ' + esc(t.trigger));
@@ -221,7 +222,7 @@
       kind: 'event', id: o.ev.id, date, title: o.ev.title, cat: o.ev.cat, start: o.start, end: o.end, done: o.done, trigger: o.ev.trigger,
       steps: o.ev.steps, isStepDone: (s) => !!o.ev.stepDone[date + ':' + s.id], recur: o.ev.recur, duration: o.ev.duration || 0
     }));
-    const tasks = S.state.tasks.filter((t) => t.today === date && t.plannedTime).map((t) => {
+    const tasks = S.state.tasks.filter((t) => t.plannedTime && S.taskDate(t) === date).map((t) => {
       const st = S.minutesOf(t.plannedTime); const dur = t.plannedDuration || 25;
       return { kind: 'task', id: t.id, date, title: t.title, cat: t.cat, start: st, end: st + dur, done: t.done, trigger: t.trigger, steps: t.steps, isStepDone: (s) => s.done, recur: null, duration: dur, prio: t.prio };
     });
@@ -298,7 +299,7 @@
     const dayE = S.energyOn(date);
     const match = (t) => (dayE ? Math.abs(eRank[t.energy] - eRank[dayE]) : 0);
     return S.state.tasks
-      .filter((t) => !t.done && !(t.today === date && t.plannedTime) && (t.today === date || (t.due && t.due <= date)))
+      .filter((t) => !t.done && !(t.plannedTime && S.taskDate(t) === date) && (t.today === date || (t.due && t.due <= date)))
       .sort((a, b) => (b.prio === 1) - (a.prio === 1) || match(a) - match(b) || (a.due || '~').localeCompare(b.due || '~'));
   }
 
@@ -467,7 +468,7 @@
     const today = S.ymd();
     const days = [...Array(7)].map((_, i) => S.addDays(monday, i));
     const entries = dayEntries(selectedDate);
-    const dueTasks = S.state.tasks.filter((t) => !t.done && t.due === selectedDate && !(t.today === selectedDate && t.plannedTime));
+    const dueTasks = S.state.tasks.filter((t) => !t.done && t.due === selectedDate && !(t.plannedTime && S.taskDate(t) === selectedDate));
     const total = entries.reduce((a, e) => a + e.duration, 0);
     return `
       <div class="page-head"><h1>Plan</h1><div class="row"><button class="btn sm outline" data-act="week" data-n="-1" aria-label="Forrige uke">‹</button><button class="btn sm outline" data-act="goToday">I dag</button><button class="btn sm outline" data-act="week" data-n="1" aria-label="Neste uke">›</button></div></div>
@@ -626,7 +627,7 @@
     const isNew = !t;
     const task = t || { title: '', cat: S.defaultCatId(), due: '', energy: 'medium', today: '', steps: [], notes: '', trigger: '', prio: 2, ...(prefill || {}) };
     const today = S.ymd();
-    const more = !!(task.due || task.trigger || task.notes || (isNew && task.steps.length) || (task.energy && task.energy !== 'medium'));
+    const more = !!(task.due || task.plannedTime || task.trigger || task.notes || (isNew && task.steps.length) || (task.energy && task.energy !== 'medium'));
     return `
       ${modalHead(isNew ? 'Ny oppgave' : 'Oppgave', isNew ? '' : `<button class="btn sm ghost" data-act="deleteTask" data-id="${task.id}" aria-label="Slett">🗑️</button>`)}
       <form data-form="saveTask" data-id="${task.id || ''}">
@@ -645,7 +646,12 @@
             <label class="field"><span>Krever</span><select class="input" name="energy"><option value="low" ${task.energy === 'low' ? 'selected' : ''}>🟢 lite energi</option><option value="medium" ${task.energy === 'medium' ? 'selected' : ''}>🟡 middels</option><option value="high" ${task.energy === 'high' ? 'selected' : ''}>🔴 mye energi</option></select></label>
             <label class="field"><span>Kobling: «Etter at jeg …»</span><input class="input" name="trigger" value="${esc(task.trigger || '')}" placeholder="f.eks. har spist frokost" autocomplete="off"></label>
           </div>
-          <label class="field"><span>Frist (valgfritt)</span>${dateField('due', task.due, dateChips(true))}</label>
+          <label class="field"><span>Frist / dato (valgfritt)</span>${dateField('due', task.due, dateChips(true))}</label>
+          <div class="grid2">
+            <label class="field"><span>Klokkeslett (valgfritt)</span>${timeField('plannedTime', task.plannedTime || '', true)}</label>
+            <label class="field"><span>Varighet (min)</span><input class="input" type="number" name="plannedDuration" min="5" max="480" value="${task.plannedDuration || 25}"></label>
+          </div>
+          <p class="tiny muted" style="margin-top:-6px">Med klokkeslett vises oppgaven i kalenderen på datoen over, eller i dag hvis ingen dato er satt.</p>
           ${isNew ? `<label class="field"><span>Steg (ett per linje, valgfritt)</span><textarea class="input" name="stepsText" placeholder="Finne fram…&#10;Gjøre første del…">${esc((task.steps || []).map((s) => s.title || s).join('\n'))}</textarea></label>` : ''}
           <label class="field"><span>Notat</span><textarea class="input" name="notes" style="min-height:56px">${esc(task.notes || '')}</textarea></label>
         </details>
@@ -1210,10 +1216,12 @@
     saveTask: (f) => {
       const d = readForm(f); const today = S.ymd();
       const due = readDate(d.due, 'frist'); if (due === null) return;
-      const patch = { title: d.title.trim(), cat: d.cat, due, energy: d.energy, notes: d.notes, trigger: (d.trigger || '').trim(), prio: d.star ? 1 : 2, today: d.today ? today : '' };
+      const plannedTime = (d.plannedTime || '').trim() ? readTime(d.plannedTime, 'klokkeslett') : '';
+      if (plannedTime === null) return;
+      const patch = { title: d.title.trim(), cat: d.cat, due, energy: d.energy, notes: d.notes, trigger: (d.trigger || '').trim(), prio: d.star ? 1 : 2, today: d.today ? today : '', plannedTime, plannedDuration: plannedTime ? Math.max(5, +d.plannedDuration || 25) : 0 };
+      // Klokkeslett uten dato: legg oppgaven i dagens plan, ellers vises den ikke i kalenderen.
+      if (plannedTime && !due && !patch.today) patch.today = today;
       if (f.dataset.id) {
-        const t = S.state.tasks.find((x) => x.id === f.dataset.id);
-        if (t && !d.today && t.today === today) patch.plannedTime = '';
         S.updateTask(f.dataset.id, patch);
       } else {
         S.addTask({ ...patch, steps: linesToSteps(d.stepsText) });

@@ -338,9 +338,19 @@ window.PLStore = (() => {
       if (desc) lines.push(`DESCRIPTION:${escT(desc)}`);
       lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT5M', `DESCRIPTION:${escT(e.title)}`, 'END:VALARM', 'END:VEVENT');
     });
+    // Oppgaver med klokkeslett tas med som enkeltavtaler.
+    state.tasks.filter((t) => !t.done && t.plannedTime && taskDate(t)).forEach((t) => {
+      lines.push('BEGIN:VEVENT', `UID:${t.id}@planlegger`, `DTSTAMP:${dt(ymd(), hm())}`, `DTSTART:${dt(taskDate(t), t.plannedTime)}`, `DURATION:PT${t.plannedDuration || 25}M`, `SUMMARY:${escT(t.title)}`);
+      const desc = [(t.steps || []).map((s) => '- ' + s.title).join('\n'), t.notes].filter(Boolean).join('\n');
+      if (desc) lines.push(`DESCRIPTION:${escT(desc)}`);
+      lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT5M', `DESCRIPTION:${escT(t.title)}`, 'END:VALARM', 'END:VEVENT');
+    });
     lines.push('END:VCALENDAR');
     return lines.join('\r\n');
   }
+
+  // Dagen en oppgave hører til i kalenderen: dagens plan hvis den er lagt der, ellers fristen.
+  const taskDate = (t) => t.today || t.due || '';
 
   // --- Innboks (tankefanger) og energi ---
   function addInbox(text) { const n = { id: uid(), text: text.trim(), created: Date.now() }; state.inbox.unshift(n); save(); return n; }
@@ -477,7 +487,7 @@ window.PLStore = (() => {
     get state() { return state; },
     onChange: (fn) => listeners.add(fn),
     hasDeviceKey, hasData, unlockWithPassword, unlockWithDevice, lockDevice, wipe, rekey, changePassword, save, exportJson, exportIcs, importJson,
-    addInbox, deleteInbox, setEnergy, energyOn,
+    addInbox, deleteInbox, setEnergy, energyOn, taskDate,
     occursOn, occurrencesOn, recurLabel, levelOf, totalDone,
     addTask, updateTask, deleteTask, restoreTask, toggleTask, toggleStep,
     addEvent, updateEvent, deleteEvent, restoreEvent, skipOccurrence, unskipOccurrence, toggleOccurrence, toggleEventStep
